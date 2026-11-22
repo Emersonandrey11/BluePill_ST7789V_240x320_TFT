@@ -1,0 +1,962 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bare Metal Quest</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap">
+<style>
+/* Bare Metal Quest: a retro arcade cabinet that teaches the architecture of lcd_01_hello_world.
+   Deliberately single-theme (a lit CRT is dark in any room).
+   Palette from the hardware: Blue Pill soldermask, copper pads, red TFT PCB, phosphor. */
+:root {
+  --room: #07060f;
+  --bezel: #1c1730;
+  --bezel-hi: #2c2547;
+  --crt: #0b0a1a;
+  --ink: #e9f0ff;
+  --dim: #8890b5;
+  --faint: #3a3860;
+  --blue: #4d86ff;
+  --copper: #f2a64b;
+  --red: #ff4d63;
+  --green: #45e38b;
+  --yellow: #ffd447;
+  --violet: #b083ff;
+  --f-pixel: "Press Start 2P", "Courier New", monospace;
+  --f-crt: "VT323", "Courier New", monospace;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { margin: 0; }
+body {
+  background: radial-gradient(ellipse at top, #15112b 0%, var(--room) 70%);
+  color: var(--ink);
+  font: 22px/1.25 var(--f-crt);
+  min-height: 100vh;
+  padding-left: max(12px, env(safe-area-inset-left, 0px));
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+  padding-block: 18px 32px;
+}
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid var(--yellow); outline-offset: 2px; }
+
+.cabinet {
+  max-width: 980px; margin: 0 auto; background: var(--bezel);
+  border: 4px solid var(--bezel-hi); border-radius: 18px; padding: 14px;
+  box-shadow: 0 0 0 4px #000, 0 30px 80px rgba(0,0,0,.6), inset 0 0 40px rgba(0,0,0,.5);
+}
+.marquee { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 4px 8px 12px; flex-wrap: wrap; }
+.marquee h1 { margin: 0; font: 14px/1.4 var(--f-pixel); color: var(--copper); letter-spacing: 1px; text-shadow: 2px 2px 0 #000; }
+.marquee .tools { display: flex; gap: 8px; }
+.tbtn { font: 9px/1 var(--f-pixel); background: var(--bezel-hi); border: 2px solid #000; padding: 8px 10px; cursor: pointer; color: var(--dim); }
+.tbtn:hover { color: var(--ink); }
+
+.screen {
+  position: relative; background: var(--crt); border-radius: 12px; overflow: hidden;
+  border: 3px solid #000; min-height: 560px;
+  box-shadow: inset 0 0 70px rgba(0,0,0,.8), inset 0 0 12px rgba(77,134,255,.15);
+}
+.screen::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 5;
+  background: repeating-linear-gradient(to bottom, rgba(255,255,255,.035) 0 1px, transparent 1px 3px);
+}
+.screen::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 6;
+  background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,.45) 100%);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .screen { animation: flicker 6s infinite; }
+  @keyframes flicker { 0%, 96%, 100% { filter: none; } 97% { filter: brightness(1.08); } 98% { filter: brightness(.96); } }
+}
+
+.hud {
+  display: flex; flex-wrap: wrap; gap: 6px 18px; justify-content: space-between; align-items: center;
+  padding: 10px 14px; border-bottom: 2px dashed var(--faint); font: 10px/1.4 var(--f-pixel); color: var(--dim);
+  position: relative; z-index: 2;
+}
+.hud b { color: var(--ink); font-weight: 400; }
+.hud .lives { color: var(--red); letter-spacing: 3px; }
+.hud .time b.low { color: var(--red); }
+.view { padding: 18px 18px 22px; position: relative; z-index: 2; }
+
+.px { font-family: var(--f-pixel); }
+h2.lv { font: 16px/1.5 var(--f-pixel); margin: 0 0 6px; color: var(--yellow); text-shadow: 2px 2px 0 #000; }
+.sub { color: var(--dim); margin: 0 0 14px; }
+p { margin: 0 0 10px; }
+.btn {
+  font: 11px/1 var(--f-pixel); background: var(--blue); color: #fff; border: 0; padding: 12px 16px; cursor: pointer;
+  box-shadow: 0 4px 0 #1d3f8c, 0 4px 0 2px #000, inset 0 0 0 2px #000; position: relative; top: 0;
+}
+.btn:active { top: 3px; box-shadow: 0 1px 0 #1d3f8c, 0 1px 0 2px #000, inset 0 0 0 2px #000; }
+.btn.copper { background: var(--copper); color: #2a1600; box-shadow: 0 4px 0 #8a5512, 0 4px 0 2px #000, inset 0 0 0 2px #000; }
+.btn.red { background: var(--red); box-shadow: 0 4px 0 #8c1d2d, 0 4px 0 2px #000, inset 0 0 0 2px #000; }
+.btn.green { background: var(--green); color: #052414; box-shadow: 0 4px 0 #157043, 0 4px 0 2px #000, inset 0 0 0 2px #000; }
+.btn.ghost { background: var(--bezel-hi); color: var(--ink); box-shadow: 0 4px 0 #000, inset 0 0 0 2px #000; }
+.btn:disabled { opacity: .4; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.kbd { font: 9px/1 var(--f-pixel); border: 2px solid var(--faint); padding: 3px 5px; color: var(--dim); }
+
+/* log line */
+.log { min-height: 58px; border: 2px solid var(--faint); padding: 8px 10px; margin-top: 14px; color: var(--ink); background: rgba(0,0,0,.25); }
+.log.good { border-color: var(--green); }
+.log.bad { border-color: var(--red); color: #ffd6dc; }
+.log .tag { font: 9px/1 var(--f-pixel); margin-right: 8px; }
+.log.good .tag { color: var(--green); } .log.bad .tag { color: var(--red); }
+.shake { animation: shake .35s; }
+@keyframes shake { 20% { transform: translate(-6px, 2px); } 40% { transform: translate(5px, -2px); } 60% { transform: translate(-4px, 1px); } 80% { transform: translate(3px, 0); } }
+@media (prefers-reduced-motion: reduce) { .shake { animation: none; } }
+
+/* title */
+.title { text-align: center; padding: 26px 10px 10px; display: grid; gap: 18px; justify-items: center; }
+.logo { font: clamp(20px, 5vw, 38px)/1.3 var(--f-pixel); color: var(--ink); text-shadow: 3px 3px 0 var(--blue), 6px 6px 0 #000; margin: 0; }
+.logo span { color: var(--copper); }
+.tagline { color: var(--dim); max-width: 56ch; }
+.blink { font: 12px/1 var(--f-pixel); color: var(--yellow); }
+@media (prefers-reduced-motion: no-preference) { .blink { animation: blink 1s steps(2) infinite; } @keyframes blink { 50% { opacity: 0; } } }
+.sprite { display: grid; gap: 0; image-rendering: pixelated; }
+.sprite i { display: block; width: var(--p, 6px); height: var(--p, 6px); }
+
+/* map */
+.map { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-top: 12px; }
+@media (max-width: 680px) { .map { grid-template-columns: minmax(0, 1fr); } }
+.stage {
+  text-align: left; background: rgba(77,134,255,.06); border: 3px solid var(--faint); padding: 12px; cursor: pointer;
+  display: grid; gap: 6px; min-width: 0;
+}
+.stage:hover:not(:disabled) { border-color: var(--blue); }
+.stage .n { font: 10px/1 var(--f-pixel); color: var(--copper); }
+.stage .t { font: 11px/1.5 var(--f-pixel); color: var(--ink); }
+.stage .s { color: var(--dim); font-size: 19px; }
+.stage.done { border-color: var(--green); }
+.stage.done .n::after { content: "  ★ CLEARED"; color: var(--green); }
+.stage:disabled { opacity: .45; cursor: default; }
+.stage:disabled .n::after { content: "  LOCKED"; color: var(--dim); }
+
+/* level 1 boot */
+.track { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; margin-bottom: 14px; }
+.slot { height: 34px; border: 2px dashed var(--faint); font: 7px/1.3 var(--f-pixel); display: grid; place-items: center; text-align: center; color: var(--dim); padding: 2px; overflow: hidden; }
+.slot.fill { border: 2px solid var(--green); color: var(--green); background: rgba(69,227,139,.08); }
+.tiles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .track { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.tile { background: #141235; border: 3px solid var(--blue); padding: 12px 8px; cursor: pointer; font: 10px/1.5 var(--f-pixel); color: var(--ink); min-height: 64px; }
+.tile:hover { background: #1c1a48; }
+.tile small { display: block; font: 18px/1.1 var(--f-crt); color: var(--dim); margin-top: 4px; }
+.tile.used { visibility: hidden; }
+
+/* level 2 stack */
+.stack2 { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 14px; }
+@media (max-width: 680px) { .stack2 { grid-template-columns: minmax(0, 1fr); } }
+.tower { display: grid; gap: 6px; }
+.floor { border: 2px dashed var(--faint); min-height: 46px; padding: 6px 10px; display: grid; align-content: center; }
+.floor.fill { border: 2px solid var(--copper); background: rgba(242,166,75,.08); }
+.floor .fn { font: 10px/1.4 var(--f-pixel); color: var(--copper); }
+.floor .fp { color: var(--dim); font-size: 18px; }
+.arrow { text-align: center; font: 9px/1 var(--f-pixel); color: var(--faint); }
+.rail { border: 2px solid var(--violet); padding: 10px; color: var(--dim); font-size: 19px; align-self: start; }
+.rail b { font: 9px/1.6 var(--f-pixel); color: var(--violet); font-weight: 400; display: block; }
+.pool { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.call { text-align: center; padding: 22px 10px; border: 3px solid var(--blue); background: #121033; margin-bottom: 14px; }
+.call .who { font: clamp(10px, 2.4vw, 14px)/1.8 var(--f-pixel); }
+.call .who .a { color: var(--copper); } .call .who .b { color: var(--green); }
+.call .what { color: var(--dim); margin-top: 6px; }
+.meter { height: 10px; border: 2px solid var(--faint); margin-top: 10px; }
+.meter > i { display: block; height: 100%; background: var(--yellow); width: 100%; }
+
+/* level 3 bus */
+.bus { display: grid; grid-template-columns: minmax(0, 1fr) 180px; gap: 14px; }
+@media (max-width: 680px) { .bus { grid-template-columns: minmax(0, 1fr); } }
+.queue { display: flex; gap: 6px; overflow: hidden; margin-bottom: 10px; }
+.card { flex: 0 0 auto; border: 2px solid var(--faint); padding: 6px 8px; font: 8px/1.5 var(--f-pixel); color: var(--dim); min-width: 92px; }
+.card.cur { border: 3px solid var(--yellow); color: var(--ink); background: rgba(255,212,71,.07); min-width: 200px; }
+.card.cur .big { font-size: 12px; color: var(--yellow); display: block; margin: 4px 0; }
+.card .cs { font: 17px/1.1 var(--f-crt); color: var(--dim); display: block; }
+.card.done { opacity: .35; }
+.panel { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 10px 0; }
+@media (max-width: 480px) { .panel { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sw { border: 3px solid var(--faint); background: #100e2a; padding: 8px; cursor: pointer; text-align: center; display: grid; gap: 4px; }
+.sw .k { font: 8px/1 var(--f-pixel); color: var(--dim); }
+.sw .v { font: 13px/1 var(--f-pixel); }
+.sw.lo .v { color: var(--blue); } .sw.hi .v { color: var(--copper); }
+.leds { display: flex; gap: 14px; flex-wrap: wrap; font: 9px/1 var(--f-pixel); color: var(--dim); align-items: center; }
+.led { width: 12px; height: 12px; display: inline-block; background: #2a2a40; border: 2px solid #000; margin-right: 6px; vertical-align: middle; }
+.led.on { background: var(--red); box-shadow: 0 0 8px var(--red); }
+.led.ok.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+.scope { border: 2px solid var(--faint); padding: 8px; margin-top: 10px; }
+.wave { display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 4px 8px; align-items: center; font: 8px/1 var(--f-pixel); color: var(--dim); }
+.bits { display: grid; grid-template-columns: repeat(16, minmax(0, 1fr)); gap: 2px; }
+.bits i { height: 14px; background: #1a1838; display: block; }
+.bits i.one { background: var(--green); } .bits i.zero { background: #2d2b55; } .bits i.off { background: transparent; }
+.bits i.clk { background: var(--blue); }
+.tft { border: 6px solid #9b2731; background: #05070d; padding: 10px; display: grid; gap: 6px; }
+.tft .glass { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px; aspect-ratio: 3 / 4; }
+.tft .glass i { display: block; background: #0d1220; }
+.tft .lbl { font: 7px/1.4 var(--f-pixel); color: #ffb3bb; text-align: center; }
+
+/* level 4 wiring */
+.wire-area { position: relative; display: grid; grid-template-columns: 1fr 1fr; gap: 80px; }
+@media (max-width: 560px) { .wire-area { gap: 40px; } }
+.col { display: grid; gap: 8px; align-content: start; position: relative; z-index: 2; }
+.col h3 { font: 9px/1.4 var(--f-pixel); color: var(--dim); margin: 0 0 4px; font-weight: 400; }
+.pinbtn { border: 3px solid var(--faint); background: #100e2a; padding: 8px 10px; cursor: pointer; text-align: left; font: 10px/1.3 var(--f-pixel); display: flex; justify-content: space-between; gap: 8px; }
+.pinbtn small { font: 17px/1 var(--f-crt); color: var(--dim); }
+.pinbtn.sel { border-color: var(--yellow); background: rgba(255,212,71,.1); }
+.pinbtn.wired { border-color: var(--green); color: var(--green); cursor: default; }
+.tftcol .pinbtn { border-left: 6px solid #9b2731; }
+.mcucol .pinbtn { border-right: 6px solid var(--blue); }
+svg.wires { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; pointer-events: none; overflow: visible; }
+svg.wires path { fill: none; stroke-width: 4; stroke-linecap: round; }
+
+/* level 5 boss */
+.arena { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 560px) { .arena { grid-template-columns: minmax(0, 1fr); justify-items: center; } }
+.hp { display: grid; gap: 6px; justify-items: center; font: 9px/1 var(--f-pixel); color: var(--red); }
+.hpbar { width: 150px; height: 14px; border: 2px solid var(--ink); background: #2a0d15; }
+.hpbar i { display: block; height: 100%; background: var(--red); transition: width .3s; }
+.proposal { border: 3px solid var(--red); background: #1e0b19; padding: 16px; }
+.proposal .from { font: 9px/1.5 var(--f-pixel); color: var(--red); }
+.proposal .text { font-size: 26px; margin: 8px 0 4px; }
+.speech { color: var(--dim); font-size: 19px; }
+
+/* level 6 fog */
+.fog { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+@media (max-width: 560px) { .fog { grid-template-columns: minmax(0, 1fr); } }
+.cell { border: 3px solid var(--faint); padding: 12px; min-height: 150px; background: repeating-linear-gradient(45deg, #11102a 0 8px, #0d0c22 8px 16px); display: grid; gap: 8px; align-content: start; }
+.cell.open { background: #120f2e; border-color: var(--violet); }
+.cell.solved { border-color: var(--green); }
+.cell .q { font: 9px/1.6 var(--f-pixel); color: var(--violet); }
+.marker { font: 9px/1.4 var(--f-pixel); color: var(--green); }
+
+/* results + codex */
+.result { text-align: center; display: grid; gap: 14px; justify-items: center; padding: 20px 6px; }
+.result .big { font: clamp(18px, 4vw, 28px)/1.4 var(--f-pixel); }
+.result .big.win { color: var(--green); text-shadow: 3px 3px 0 #000; }
+.result .big.lose { color: var(--red); text-shadow: 3px 3px 0 #000; }
+.unlock { border: 2px solid var(--copper); padding: 10px 12px; color: var(--copper); font: 9px/1.6 var(--f-pixel); }
+.codex { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 14px; }
+@media (max-width: 680px) { .codex { grid-template-columns: minmax(0, 1fr); } }
+.codex nav { display: grid; gap: 6px; align-content: start; }
+.codex nav button { text-align: left; background: #100e2a; border: 2px solid var(--faint); padding: 8px; font: 8px/1.5 var(--f-pixel); cursor: pointer; color: var(--ink); }
+.codex nav button[aria-current="true"] { border-color: var(--copper); color: var(--copper); }
+.codex nav button:disabled { color: var(--dim); cursor: default; }
+.codex article { border: 2px solid var(--faint); padding: 12px 14px; min-width: 0; max-height: 470px; overflow: auto; }
+.codex article h3 { font: 11px/1.6 var(--f-pixel); color: var(--copper); margin: 0 0 8px; font-weight: 400; }
+.codex table { border-collapse: collapse; width: 100%; font-size: 19px; margin: 6px 0 12px; }
+.codex th, .codex td { border: 1px solid var(--faint); padding: 4px 6px; text-align: left; vertical-align: top; }
+.codex th { font: 8px/1.4 var(--f-pixel); color: var(--dim); font-weight: 400; }
+.tbl { overflow-x: auto; }
+code { color: var(--green); font-family: var(--f-crt); }
+.foot { margin-top: 12px; color: var(--dim); font-size: 18px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="cabinet">
+  <div class="marquee">
+    <h1>BARE METAL QUEST</h1>
+    <div class="tools">
+      <button class="tbtn" id="b-map" type="button">MAP</button>
+      <button class="tbtn" id="b-codex" type="button">CODEX</button>
+      <button class="tbtn" id="b-sound" type="button" aria-pressed="true">SOUND ON</button>
+    </div>
+  </div>
+  <div class="screen" id="screen">
+    <div class="hud" id="hud" hidden>
+      <span>LV <b id="h-lv">1</b></span>
+      <span>SCORE <b id="h-score">0</b></span>
+      <span>HI <b id="h-hi">0</b></span>
+      <span class="lives" id="h-lives" aria-label="lives">♥♥♥</span>
+      <span class="time">TIME <b id="h-time">--</b></span>
+    </div>
+    <div class="view" id="view" aria-live="polite"></div>
+  </div>
+  <p class="foot">Every fact in this game describes <code>lcd_01_hello_world</code> as of 2026-11-22: its code, <code>CLAUDE.md</code>, <code>HARDWARE.md</code> and its open hardware checks. Keys: <span class="kbd">ENTER</span> start · <span class="kbd">M</span> map · <span class="kbd">S</span> sound.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (s, r) { return (r || document).querySelector(s); };
+  var view = $("#view"), hud = $("#hud"), screenEl = $("#screen");
+  function esc(s) { return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; }); }
+  function shuffle(a) { a = a.slice(); for (var i = a.length - 1; i > 0; i--) { var j = Math.floor(Math.random() * (i + 1)); var t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
+
+  // ---- storage (per viewer, optional) --------------------------------------
+  var save = { cleared: [], hi: 0, sound: true };
+  try { var raw = localStorage.getItem("bmq-save"); if (raw) save = Object.assign(save, JSON.parse(raw)); } catch (e) { /* private mode */ }
+  function persist() { try { localStorage.setItem("bmq-save", JSON.stringify(save)); } catch (e) { /* ignore */ } }
+
+  // ---- sound: square-wave bleeps, only after a click ------------------------
+  var actx = null;
+  function tone(freq, dur, when, type, vol) {
+    if (!save.sound) return;
+    try {
+      actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+      var t = actx.currentTime + (when || 0);
+      var o = actx.createOscillator(), g = actx.createGain();
+      o.type = type || "square"; o.frequency.value = freq;
+      g.gain.setValueAtTime(vol || 0.05, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(actx.destination); o.start(t); o.stop(t + dur);
+    } catch (e) { /* no audio */ }
+  }
+  var sfx = {
+    good: function () { tone(880, 0.08); tone(1320, 0.1, 0.07); },
+    bad: function () { tone(140, 0.25, 0, "sawtooth", 0.06); },
+    win: function () { [523, 659, 784, 1047].forEach(function (f, i) { tone(f, 0.14, i * 0.11); }); },
+    lose: function () { [392, 330, 262, 196].forEach(function (f, i) { tone(f, 0.2, i * 0.15, "triangle", 0.07); }); },
+    tick: function () { tone(1800, 0.02, 0, "square", 0.02); }
+  };
+  function syncSound() { var b = $("#b-sound"); b.textContent = save.sound ? "SOUND ON" : "SOUND OFF"; b.setAttribute("aria-pressed", String(save.sound)); }
+
+  // ---- pixel sprites ---------------------------------------------------------
+  var PAL = { r: "var(--red)", w: "var(--ink)", k: "#000", y: "var(--yellow)", b: "var(--blue)", c: "var(--copper)", g: "var(--green)", d: "#262347", v: "var(--violet)" };
+  function sprite(rows, p) {
+    var w = rows[0].length, s = '<div class="sprite" aria-hidden="true" style="--p:' + p + "px;grid-template-columns:repeat(" + w + "," + p + 'px)">';
+    rows.forEach(function (r) { for (var i = 0; i < w; i++) { var ch = r[i]; s += "<i" + (ch !== "." ? ' style="background:' + PAL[ch] + '"' : "") + "></i>"; } });
+    return s + "</div>";
+  }
+  var CHIP = ["..c.c.c.c.c...", ".dddddddddddd.", "cdkkkkkkkkkkdc", ".dkwkkkkkkkkd.", "cdkkkkkkkkkkdc", ".dkkbbbbbbkkd.", "cdkkbwwwwbkkdc", ".dkkbbbbbbkkd.", "cdkkkkkkkkkkdc", ".dddddddddddd.", "..c.c.c.c.c..."];
+  var BOSS = ["...rrrrrrrr...", "..rrrrrrrrrr..", ".rrwwrrrrwwrr.", ".rrwkrrrrwkrr.", "rrrrrrrrrrrrrr", "rrrrkkkkkkrrrr", "rrrkyykkyykrrr", "rrrrkkkkkkrrrr", ".rrrrrrrrrrrr.", "..r.rr..rr.r..", ".r..r....r..r."];
+
+  // ---- the facts (from lcd_01_hello_world: code, CLAUDE.md, HARDWARE.md) ------------------------------------
+  var CODEX = [
+    { id: "overview", title: "Overview", lv: -1, html:
+      "<p>One folder per project, each a standalone firmware for the same hardware: an STM32F103C8T6 (Cortex-M3, 64 KB flash, 20 KB RAM) driving an ST7789V panel over SPI1. No HAL, no CMSIS: every register access goes through hand-written names.</p>" +
+      "<p>The only project so far is <code>lcd_01_hello_world/</code>, a single firmware image that runs from flash at <code>0x0800 0000</code> on a polling super loop (no RTOS, no interrupts other than SysTick). Its application, <code>Src/main.c</code>, is intentionally empty; the LCD drivers below it are reference code.</p>" },
+    { id: "startup", title: "Start-up flow", lv: 0, html:
+      "<p>reset → core loads SP and PC from the vector table → <code>Reset_Handler</code> → <code>SystemInit()</code> (HSE 8 MHz × 6 = 48 MHz, 1 flash wait state, VTOR) → copy <code>.data</code>, zero <code>.bss</code> → <code>__libc_init_array</code> → <code>main()</code>.</p>" +
+      "<p>SysTick is not started before <code>main()</code>: the application calls <code>timebase_init()</code>.</p>" },
+    { id: "components", title: "Components", lv: 1, html:
+      "<p>Paths are relative to <code>lcd_01_hello_world/</code>.</p><div class=\"tbl\"><table><tr><th>Component</th><th>Responsibility</th><th>Path</th></tr>" +
+      "<tr><td>Application</td><td>The program the person writes; empty super loop today</td><td><code>Src/main.c</code></td></tr>" +
+      "<tr><td>Graphics</td><td>Filled rectangles and fixed-width text, built only on the four <code>st7789.h</code> window calls; no registers</td><td><code>Src/gfx.c</code>, <code>Inc/gfx.h</code>, <code>Src/font_data.c</code>, <code>Inc/font.h</code></td></tr>" +
+      "<tr><td>Panel driver</td><td>ST7789V command set, init sequence, window and pixel streaming; owns the CS/DC/RESET GPIOs and the TIM3_CH3 backlight PWM</td><td><code>Src/st7789.c</code>, <code>Inc/st7789.h</code></td></tr>" +
+      "<tr><td>SPI driver</td><td>SPI1 master, polling, 8- and 16-bit frames</td><td><code>Src/spi.c</code>, <code>Inc/spi.h</code></td></tr>" +
+      "<tr><td>System</td><td>48 MHz clock (<code>SystemInit</code>), 1 ms SysTick, pin map and clock constants</td><td><code>Src/clock.c</code>, <code>Src/timebase.c</code>, <code>Inc/board.h</code></td></tr>" +
+      "<tr><td>Register map</td><td>Addresses and bit names of every register used</td><td><code>Inc/stm32f103_regs.h</code></td></tr>" +
+      "<tr><td>Start-up and memory map</td><td>Vector table, <code>Reset_Handler</code>, section placement</td><td><code>Src/startup_stm32f103xx.S</code>, <code>stm32f103x8_flash.ld</code></td></tr>" +
+      "<tr><td>Build and flash</td><td>CMake presets, ST-Link flashing scripts</td><td><code>CMakeLists.txt</code>, <code>CMakePresets.json</code>, <code>cmake/</code>, <code>flash.sh</code>, <code>flash.ps1</code></td></tr>" +
+      "<tr><td>PC tools</td><td>OpenOCD tutorial and live inspector; font generator</td><td><code>openocd.py</code>, <code>tools/gen_font.py</code></td></tr></table></div>" +
+      "<p>Calls go downward only: Application → Graphics → Panel driver → SPI driver → Register map. <code>board.h</code> and <code>timebase.c</code> are used by every layer.</p>" },
+    { id: "drawing", title: "Drawing flow", lv: 2, html:
+      "<p><code>gfx_*</code> → <code>lcd_set_window()</code> (CASET, RASET, RAMWR with 8-bit SPI frames, CS left low) → <code>lcd_write_pixels()</code> / <code>lcd_fill_pixels()</code> (16-bit frames, one RGB565 pixel per <code>SPI1_DR</code> write) → <code>lcd_end()</code> (wait for BSY = 0, CS high, back to 8-bit frames).</p>" +
+      "<p>DC must not change while a byte is shifting out, and DFF may change only while SPI1 is disabled.</p>" },
+    { id: "deps", title: "Dependencies & wiring", lv: 3, html:
+      "<div class=\"tbl\"><table><tr><th>Dependency</th><th>Use</th><th>Boundary</th></tr>" +
+      "<tr><td>ST7789V TFT module</td><td>Display, 4-wire SPI mode 0, RGB565 (<code>COLMOD = 0x55</code>)</td><td>Panel commands exist only in <code>st7789.c</code>; nothing above it knows the command set</td></tr>" +
+      "<tr><td>STM32F103C8T6 peripherals</td><td>SPI1, GPIOA/B/C, TIM3, RCC, SysTick</td><td>Register names only from <code>stm32f103_regs.h</code>; <code>gfx.c</code> touches no register</td></tr>" +
+      "<tr><td>Blue Pill board</td><td>8 MHz crystal, PC13 LED (active low), BOOT0 jumper</td><td>Pin numbers only in <code>board.h</code></td></tr>" +
+      "<tr><td>GNU Arm toolchain 14.3.1+st.2, CMake, Ninja</td><td>Build, from the STM32Cube VS Code extension bundles</td><td><code>cmake/flags.cmake</code>, <code>cmake/files.cmake</code> and <code>project-description.json</code> are managed by the extension; add sources in <code>CMakeLists.txt</code></td></tr>" +
+      "<tr><td>ST-Link V2 with OpenOCD 0.12 or st-flash</td><td>Flashing and debugging over SWD (PA13, PA14)</td><td>Only one program can own the ST-Link at a time</td></tr></table></div>" +
+      "<div class=\"tbl\"><table><tr><th>TFT</th><th>MCU</th><th>Driven by</th><th>Pin mode</th></tr>" +
+      "<tr><td>SCK</td><td>PA5 (15)</td><td>SPI1_SCK</td><td>AF push-pull 50 MHz</td></tr><tr><td>SDI (MOSI)</td><td>PA7 (17)</td><td>SPI1_MOSI</td><td>AF push-pull 50 MHz</td></tr>" +
+      "<tr><td>SDO (MISO)</td><td>PA6 (16)</td><td>SPI1_MISO, panel ID only</td><td>input pull-down</td></tr><tr><td>CS</td><td>PA4 (14)</td><td>GPIO, active low</td><td>output 50 MHz</td></tr>" +
+      "<tr><td>DC</td><td>PA3 (13)</td><td>GPIO, low = command</td><td>output 50 MHz</td></tr><tr><td>RESET</td><td>PA2 (12)</td><td>GPIO, active low</td><td>output 2 MHz</td></tr>" +
+      "<tr><td>LED</td><td>PB0 (18)</td><td>TIM3_CH3 PWM, 20 kHz</td><td>AF push-pull 2 MHz</td></tr><tr><td>VCC, GND</td><td>3.3 V, GND</td><td>—</td><td>—</td></tr></table></div>" },
+    { id: "constraints", title: "Constraints", lv: 4, html:
+      "<ul><li>Clock frequencies in <code>board.h</code> (<code>CORE_CLOCK_HZ</code>, <code>PCLK1_HZ</code>, <code>PCLK2_HZ</code>, <code>TIM_APB1_HZ</code>) match what <code>clock.c</code> configures; every timing derives from them.</li>" +
+      "<li>APB1 at most 36 MHz; flash needs 1 wait state above 24 MHz.</li>" +
+      "<li>20 KB of RAM: no frame buffer (a full frame is 153,600 bytes); pixels stream straight to the panel.</li>" +
+      "<li>Image linked at <code>0x0800 0000</code>, 64 KB of flash, 512 B heap and 1 KB stack reserved by the linker script.</li>" +
+      "<li>The build has no warnings with <code>-Wall -Wextra -Wpedantic</code>.</li></ul>" },
+    { id: "undetermined", title: "Undetermined points", lv: 5, html:
+      "<ul><li>Hardware behavior of the drivers in this repository: <code>&lt;to verify&gt;</code> — the board did not answer on SWD on 2026-11-22, so nothing has been flashed or run since the project was cut down from the MPU6050 project.</li>" +
+      "<li><code>openocd.py</code> against a real chip: <code>&lt;to verify&gt;</code> — tested only against a simulated OpenOCD TCL server.</li>" +
+      "<li>TFT header pin order: <code>&lt;to verify&gt;</code> — taken from the common red 2.8\" SPI module; not checked against this module's silkscreen.</li>" +
+      "<li>Layout of future <code>lcd_0N</code> projects (shared drivers or copies): <code>&lt;TBD&gt;</code>.</li></ul>" +
+      "<p><code>&lt;to verify&gt;</code> is a reasonable expectation not yet confirmed; <code>&lt;TBD&gt;</code> means no choice has been made yet.</p>" }
+  ];
+
+  // ---- game state ------------------------------------------------------------
+  var run = { score: 0, lives: 3, lv: -1 };
+  var cleanups = [];
+  var keyHandler = null;
+  function cleanup() { cleanups.forEach(function (f) { f(); }); cleanups = []; keyHandler = null; }
+  function setHud(lv) {
+    hud.hidden = lv < 0;
+    $("#h-lv").textContent = lv + 1;
+    $("#h-score").textContent = run.score;
+    $("#h-hi").textContent = Math.max(save.hi, run.score);
+    $("#h-lives").textContent = "♥♥♥".slice(0, Math.max(run.lives, 0)) + "♡♡♡".slice(0, 3 - Math.max(run.lives, 0));
+    $("#h-lives").setAttribute("aria-label", run.lives + " lives");
+  }
+  function setTime(t) { var b = $("#h-time"); b.textContent = t == null ? "--" : Math.ceil(t); b.classList.toggle("low", t != null && t <= 10); }
+  function shake() { screenEl.classList.remove("shake"); void screenEl.offsetWidth; screenEl.classList.add("shake"); }
+
+  function makeCtx(lvIndex) {
+    var ctx = { over: false };
+    ctx.log = function (msg, kind) {
+      var l = $(".log", view); if (!l) return;
+      l.className = "log" + (kind ? " " + kind : "");
+      l.innerHTML = (kind === "good" ? '<span class="tag">OK</span>' : kind === "bad" ? '<span class="tag">FAULT</span>' : "") + msg;
+    };
+    ctx.ok = function (pts, msg) { run.score += pts; setHud(lvIndex); sfx.good(); if (msg) ctx.log(msg, "good"); };
+    ctx.bad = function (msg) {
+      run.lives--; setHud(lvIndex); sfx.bad(); shake(); ctx.log(msg, "bad");
+      if (run.lives <= 0) { ctx.end(false, msg); return false; }
+      return true;
+    };
+    ctx.timer = function (sec, onEnd) {
+      var t = sec * 10, id = null;
+      function start() {
+        if (id) return;
+        id = setInterval(function () {
+          if (ctx.over) return;
+          t--; setTime(t / 10); if (t > 0 && t <= 50 && t % 10 === 0) sfx.tick();
+          if (t <= 0) { clearInterval(id); id = null; onEnd(); }
+        }, 100);
+      }
+      setTime(sec); start();
+      cleanups.push(function () { if (id) clearInterval(id); id = null; });
+      return { left: function () { return t / 10; }, set: function (s) { if (ctx.over) return; t = s * 10; setTime(s); start(); } };
+    };
+    ctx.end = function (won, why) {
+      if (ctx.over) return; ctx.over = true;
+      cleanup(); setTime(null);
+      if (won) {
+        if (save.cleared.indexOf(lvIndex) < 0) save.cleared.push(lvIndex);
+        sfx.win();
+      } else sfx.lose();
+      if (run.score > save.hi) save.hi = run.score;
+      persist();
+      setTimeout(function () { result(lvIndex, won, why); }, won ? 500 : 900);
+    };
+    return ctx;
+  }
+
+  // ---- screens -----------------------------------------------------------------
+  function title() {
+    cleanup(); run.lv = -1; setHud(-1);
+    view.innerHTML = '<div class="title">' + sprite(CHIP, 8) +
+      '<h2 class="logo">BARE <span>METAL</span><br>QUEST</h2>' +
+      '<p class="tagline">Six stages through the architecture of the <code>lcd</code> repository: an STM32F103C8T6 driving an ST7789V panel over SPI1, with no HAL and no CMSIS. Clear a stage to unlock its page in the codex.</p>' +
+      '<button class="btn copper" id="go" type="button">PRESS START</button><span class="blink">INSERT COIN</span>' +
+      '<p class="sub">HI-SCORE ' + save.hi + " · STAGES CLEARED " + save.cleared.length + " / " + LEVELS.length + "</p></div>";
+    $("#go").onclick = map; keyHandler = function (e) { if (e.key === "Enter") map(); };
+  }
+
+  function map() {
+    cleanup(); run.lv = -1; setHud(-1); hud.hidden = true;
+    var s = '<h2 class="lv">STAGE SELECT</h2><p class="sub">Each stage is one part of the project architecture. Clear one to open the next.</p><div class="map">';
+    LEVELS.forEach(function (L, i) {
+      var open = i === 0 || save.cleared.indexOf(i - 1) >= 0 || save.cleared.indexOf(i) >= 0;
+      var done = save.cleared.indexOf(i) >= 0;
+      s += '<button class="stage' + (done ? " done" : "") + '" type="button" data-i="' + i + '"' + (open ? "" : " disabled") + ">" +
+        '<span class="n">STAGE ' + (i + 1) + '</span><span class="t">' + esc(L.name) + '</span><span class="s">' + esc(L.section) + "</span></button>";
+    });
+    s += '</div><div class="row" style="margin-top:16px"><button class="btn ghost" id="codex" type="button">OPEN CODEX</button>' +
+      '<button class="btn ghost" id="reset" type="button">RESET PROGRESS</button><span class="sub" style="margin:0">SCORE THIS RUN ' + run.score + "</span></div>";
+    view.innerHTML = s;
+    view.querySelectorAll(".stage").forEach(function (b) { b.onclick = function () { briefing(+b.dataset.i); }; });
+    $("#codex").onclick = function () { codex(); };
+    $("#reset").onclick = function () {
+      var b = $("#reset");
+      if (b.dataset.confirm) { save.cleared = []; save.hi = 0; run.score = 0; persist(); map(); }
+      else { b.dataset.confirm = "1"; b.textContent = "CLICK AGAIN TO ERASE"; }
+    };
+    var first = view.querySelector(".stage:not(:disabled):not(.done)") || view.querySelector(".stage");
+    if (first) first.focus();
+  }
+
+  function briefing(i) {
+    cleanup(); var L = LEVELS[i]; run.lv = i; run.lives = 3; setHud(i); setTime(null);
+    view.innerHTML = '<h2 class="lv">STAGE ' + (i + 1) + ": " + esc(L.name) + '</h2><p class="sub">TOPIC: ' + esc(L.section) + "</p>" +
+      "<p>" + L.brief + "</p>" + '<p class="sub">' + L.controls + "</p>" +
+      '<div class="row" style="margin-top:14px"><button class="btn copper" id="start" type="button">START ▶</button><button class="btn ghost" id="back" type="button">MAP</button></div>';
+    $("#start").onclick = function () { play(i); };
+    $("#back").onclick = map;
+    $("#start").focus();
+    keyHandler = function (e) { if (e.key === "Enter") play(i); };
+  }
+
+  function play(i) {
+    cleanup(); run.lives = 3; setHud(i);
+    var ctx = makeCtx(i);
+    LEVELS[i].play(ctx);
+  }
+
+  function result(i, won, why) {
+    cleanup(); setHud(i);
+    var entry = CODEX.filter(function (c) { return c.lv === i; })[0];
+    var s = '<div class="result">' + (won ? sprite(CHIP, 6) : sprite(BOSS, 6)) +
+      '<div class="big ' + (won ? "win" : "lose") + '">' + (won ? "STAGE CLEAR" : "GAME OVER") + "</div>" +
+      "<p>" + (won ? "SCORE " + run.score : esc(why || "")) + "</p>";
+    if (won && entry) s += '<div class="unlock">CODEX UNLOCKED: ' + esc(entry.title.toUpperCase()) + "</div>";
+    s += '<div class="row" style="justify-content:center">';
+    if (won && i < LEVELS.length - 1) s += '<button class="btn copper" id="next" type="button">NEXT STAGE ▶</button>';
+    if (won && i === LEVELS.length - 1) s += '<button class="btn copper" id="fin" type="button">ENDING ▶</button>';
+    s += '<button class="btn" id="retry" type="button">' + (won ? "REPLAY" : "RETRY") + '</button>';
+    if (won && entry) s += '<button class="btn ghost" id="read" type="button">READ CODEX</button>';
+    s += '<button class="btn ghost" id="tomap" type="button">MAP</button></div></div>';
+    view.innerHTML = s;
+    if ($("#next")) $("#next").onclick = function () { briefing(i + 1); };
+    if ($("#fin")) $("#fin").onclick = ending;
+    $("#retry").onclick = function () { briefing(i); };
+    if ($("#read")) $("#read").onclick = function () { codex(entry.id); };
+    $("#tomap").onclick = map;
+    var f = $("#next") || $("#fin") || $("#retry"); f.focus();
+  }
+
+  function ending() {
+    cleanup(); setHud(-1);
+    view.innerHTML = '<div class="result">' + sprite(CHIP, 8) +
+      '<div class="big win">ALL STAGES CLEAR</div>' +
+      "<p>You walked the whole architecture: start-up, layers, the SPI bus, the wiring, the constraints and the open questions.</p>" +
+      "<p>The next step is not in this game: write <code>main.c</code>, call <code>timebase_init()</code>, then <code>lcd_init()</code>, and draw your first rectangle.</p>" +
+      '<p class="sub">FINAL SCORE ' + run.score + " · HI-SCORE " + save.hi + "</p>" +
+      '<div class="row" style="justify-content:center"><button class="btn copper" id="cx" type="button">FULL CODEX</button><button class="btn ghost" id="tm" type="button">MAP</button></div></div>';
+    $("#cx").onclick = function () { codex(); };
+    $("#tm").onclick = map;
+  }
+
+  function codex(id) {
+    cleanup(); setHud(-1);
+    var open = function (c) { return c.lv < 0 || save.cleared.indexOf(c.lv) >= 0; };
+    var cur = CODEX.filter(function (c) { return c.id === id && open(c); })[0] || CODEX[0];
+    var nav = CODEX.map(function (c) {
+      return '<button type="button" data-id="' + c.id + '"' + (open(c) ? "" : " disabled") + (c === cur ? ' aria-current="true"' : "") + ">" +
+        (open(c) ? esc(c.title.toUpperCase()) : "??? (STAGE " + (c.lv + 1) + ")") + "</button>";
+    }).join("");
+    view.innerHTML = '<h2 class="lv">CODEX</h2><p class="sub">The architecture of <code>lcd_01_hello_world</code>, one page per cleared stage.</p>' +
+      '<div class="codex"><nav aria-label="Codex pages">' + nav + '</nav><article><h3>' + esc(cur.title.toUpperCase()) + "</h3>" + cur.html + "</article></div>" +
+      '<div class="row" style="margin-top:14px"><button class="btn ghost" id="cm" type="button">MAP</button></div>';
+    view.querySelectorAll(".codex nav button").forEach(function (b) { b.onclick = function () { codex(b.dataset.id); }; });
+    $("#cm").onclick = map;
+  }
+
+  // ---- STAGE 1: boot sequence ---------------------------------------------------
+  var BOOT = [
+    { k: "RESET", s: "chip leaves reset", d: "Reset. The core is about to start; nothing has run yet." },
+    { k: "VECTOR TABLE", s: "load SP and PC", d: "The core loads the stack pointer and the program counter from the vector table: no code runs for this, it is hardware." },
+    { k: "Reset_Handler", s: "first instruction", d: "<code>Reset_Handler</code> is the address the vector table pointed to: the first code that runs." },
+    { k: "SystemInit()", s: "clock to 48 MHz", d: "<code>SystemInit()</code>: HSE 8 MHz × 6 = 48 MHz, 1 flash wait state, VTOR." },
+    { k: "COPY .data", s: "globals with values", d: "Copy <code>.data</code>: globals with a starting value get it from flash." },
+    { k: "ZERO .bss", s: "other globals", d: "Zero <code>.bss</code>: every other global and static starts at 0." },
+    { k: "__libc_init_array", s: "C library init", d: "<code>__libc_init_array</code>: the C library initialises itself." },
+    { k: "main()", s: "your program", d: "<code>main()</code>: the application starts. In <code>lcd_01_hello_world</code> it is empty on purpose." }
+  ];
+  var TRAP = { k: "timebase_init()", s: "start SysTick", trap: true };
+
+  function playBoot(ctx) {
+    var next = 0, tiles = shuffle(BOOT.map(function (b, i) { return Object.assign({ i: i }, b); }).concat([TRAP]));
+    var s = '<h2 class="lv">BOOT SEQUENCE</h2><p class="sub">Click the steps in the order the chip runs them, from reset to main().</p><div class="track">';
+    for (var i = 0; i < 8; i++) s += '<div class="slot" id="slot' + i + '">' + (i + 1) + "</div>";
+    s += '</div><div class="tiles">';
+    tiles.forEach(function (t, j) { s += '<button class="tile" type="button" data-j="' + j + '">' + esc(t.k) + "<small>" + (j + 1) + " · " + esc(t.s) + "</small></button>"; });
+    s += '</div><div class="log">Power is on. What happens first?</div>';
+    view.innerHTML = s;
+    ctx.timer(75, function () { ctx.end(false, "Time ran out before main() was reached."); });
+    function pick(j) {
+      if (ctx.over) return;
+      var t = tiles[j], btn = view.querySelector('.tile[data-j="' + j + '"]');
+      if (!btn || btn.classList.contains("used")) return;
+      if (t.trap) {
+        if (ctx.bad("SysTick is not started before main(): the application calls <code>timebase_init()</code> itself.")) { btn.classList.add("used"); }
+        return;
+      }
+      if (t.i !== next) { ctx.bad("<code>" + esc(t.k) + "</code> is step " + (t.i + 1) + " of 8. Step " + (next + 1) + " comes first."); return; }
+      btn.classList.add("used");
+      var slot = $("#slot" + next); slot.classList.add("fill"); slot.textContent = t.k;
+      next++;
+      ctx.ok(100, t.d);
+      if (next === 8) { run.score += 50; setHud(0); ctx.log(t.d + " · <b>BONUS +50</b>", "good"); setTimeout(function () { ctx.end(true); }, 900); }
+    }
+    view.querySelectorAll(".tile").forEach(function (b) { b.onclick = function () { pick(+b.dataset.j); }; });
+    keyHandler = function (e) { var n = parseInt(e.key, 10); if (n >= 1 && n <= 9) pick(n - 1); };
+  }
+
+  // ---- STAGE 2: the layer stack + call checker -------------------------------------
+  var LAYERS = [
+    { k: "Application", p: "Src/main.c", d: "The program the person writes; empty super loop today." },
+    { k: "Graphics", p: "Src/gfx.c · font_data.c", d: "Filled rectangles and fixed-width text, built only on the four st7789.h window calls; no registers." },
+    { k: "Panel driver", p: "Src/st7789.c", d: "ST7789V command set, init sequence, window and pixel streaming; owns CS/DC/RESET and the TIM3_CH3 backlight." },
+    { k: "SPI driver", p: "Src/spi.c", d: "SPI1 master, polling, 8- and 16-bit frames." },
+    { k: "Register map", p: "Inc/stm32f103_regs.h", d: "Addresses and bit names of every register used." }
+  ];
+  var CALLS = [
+    { a: "main.c", b: "gfx_text()", ok: true, why: "Application → Graphics: one layer down." },
+    { a: "gfx.c", b: "lcd_set_window()", ok: true, why: "Graphics is built only on the four st7789.h window calls." },
+    { a: "gfx.c", b: "SPI1_DR = pixel", ok: false, why: "gfx.c touches no register, and it may not skip the panel and SPI drivers." },
+    { a: "st7789.c", b: "spi1_send()", ok: true, why: "Panel driver → SPI driver: one layer down." },
+    { a: "spi.c", b: "gfx_fill_rect()", ok: false, why: "Calls go downward only: the SPI driver never calls up into Graphics." },
+    { a: "st7789.c", b: "delay_ms()", ok: true, why: "timebase.c is used by every layer." },
+    { a: "spi.c", b: "LCD_SCK_PIN (board.h)", ok: true, why: "board.h is used by every layer; pin numbers live only there." },
+    { a: "main.c", b: "send RAMWR 0x2C", ok: false, why: "Panel commands exist only in st7789.c; nothing above it knows the command set." },
+    { a: "st7789.c", b: "TIM3_CCR3 = duty", ok: true, why: "The panel driver owns the TIM3_CH3 backlight PWM, and uses the register's name." },
+    { a: "st7789.c", b: "*(uint32_t *)0x40013000", ok: false, why: "Register names only from stm32f103_regs.h: never a raw address." }
+  ];
+  function playStack(ctx) {
+    var next = 0, pool = shuffle(LAYERS.map(function (l, i) { return Object.assign({ i: i }, l); }));
+    function draw() {
+      var s = '<h2 class="lv">BUILD THE STACK</h2><p class="sub">Place the layers from the top (who calls) to the bottom (what is called).</p><div class="stack2"><div class="tower">';
+      LAYERS.forEach(function (l, i) {
+        s += '<div class="floor' + (i < next ? " fill" : "") + '">' + (i < next ? '<span class="fn">' + esc(l.k) + '</span><span class="fp">' + esc(l.p) + "</span>" : '<span class="fp">FLOOR ' + (i + 1) + "</span>") + "</div>";
+        if (i < 4) s += '<div class="arrow">▼ CALLS ▼</div>';
+      });
+      s += '</div><div class="rail"><b>SIDE RAIL</b><code>board.h</code> and <code>timebase.c</code> are used by every layer.</div></div><div class="pool">';
+      pool.forEach(function (l, j) { s += '<button class="btn ghost" type="button" data-j="' + j + '"' + (l.placed ? " hidden" : "") + ">" + (j + 1) + " " + esc(l.k.toUpperCase()) + "</button>"; });
+      s += '</div><div class="log">Which layer sits on top?</div>';
+      view.innerHTML = s;
+      view.querySelectorAll(".pool button").forEach(function (b) { b.onclick = function () { place(+b.dataset.j); }; });
+    }
+    function place(j) {
+      if (ctx.over || phase !== 1) return;
+      var l = pool[j]; if (!l || l.placed) return;
+      if (l.i !== next) { ctx.bad(esc(l.k) + " is floor " + (l.i + 1) + ". Floor " + (next + 1) + " is still empty."); return; }
+      l.placed = true; next++; draw(); ctx.ok(80, "<b>" + esc(l.k) + "</b>: " + esc(l.d));
+      if (next === 5) { phase = 2; setTimeout(calls, 1100); }
+    }
+    var phase = 1;
+    draw();
+    keyHandler = function (e) { var n = parseInt(e.key, 10); if (phase === 1 && n >= 1 && n <= 5) place(n - 1); };
+
+    function calls() {
+      if (ctx.over) return;
+      var list = shuffle(CALLS), k = 0, t;
+      function show() {
+        var c = list[k];
+        view.innerHTML = '<h2 class="lv">CALL CHECKER ' + (k + 1) + "/" + list.length + '</h2><p class="sub">Calls go downward only, through names. Is this call allowed?</p>' +
+          '<div class="call"><div class="who"><span class="a">' + esc(c.a) + '</span> → <span class="b">' + esc(c.b) + "</span></div>" +
+          '<div class="meter"><i id="m"></i></div></div><div class="row"><button class="btn green" id="yes" type="button">◀ LEGAL</button><button class="btn red" id="no" type="button">ILLEGAL ▶</button></div><div class="log">' + (k ? "" : "Decide before the bar runs out.") + "</div>";
+        $("#yes").onclick = function () { answer(true); };
+        $("#no").onclick = function () { answer(false); };
+        t.set(9);
+      }
+      var answered = false;
+      t = ctx.timer(9, function () {});
+      var watch = setInterval(function () {
+        if (ctx.over) return;
+        var m = $("#m"); if (m) m.style.width = (t.left() / 9 * 100) + "%";
+        if (t.left() <= 0.05 && !answered) { answered = true; if (ctx.bad("Too slow. " + esc(list[k].why))) advance(); }
+      }, 100);
+      cleanups.push(function () { clearInterval(watch); });
+      function answer(v) {
+        if (ctx.over || answered) return; answered = true;
+        var c = list[k];
+        if (v === c.ok) { ctx.ok(60 + Math.round(t.left() * 5), (c.ok ? "LEGAL. " : "ILLEGAL. ") + esc(c.why)); advance(); }
+        else if (ctx.bad("Wrong: it is " + (c.ok ? "legal. " : "illegal. ") + esc(c.why))) advance();
+      }
+      function advance() {
+        var msg = $(".log", view).innerHTML, kind = $(".log", view).className;
+        setTimeout(function () {
+          if (ctx.over) return;
+          k++; answered = false;
+          if (k >= list.length) { ctx.end(true); return; }
+          show(); var l = $(".log", view); l.innerHTML = msg; l.className = kind;
+        }, 1100);
+      }
+      show();
+      keyHandler = function (e) { if (e.key === "ArrowLeft") answer(true); if (e.key === "ArrowRight") answer(false); };
+    }
+  }
+
+  // ---- STAGE 3: drive the SPI bus ---------------------------------------------------
+  var STEPS = [
+    { big: "CASET 0x2A", sub: "column address set", v: 0x2A, cs: 0, dc: "CMD", dff: 8, fn: "lcd_set_window()" },
+    { big: "00 00 00 EF", sub: "x0 = 0, x1 = 239", v: 0xEF, cs: 0, dc: "DATA", dff: 8, fn: "lcd_set_window()" },
+    { big: "RASET 0x2B", sub: "row address set", v: 0x2B, cs: 0, dc: "CMD", dff: 8, fn: "lcd_set_window()" },
+    { big: "00 00 01 3F", sub: "y0 = 0, y1 = 319", v: 0x3F, cs: 0, dc: "DATA", dff: 8, fn: "lcd_set_window()" },
+    { big: "RAMWR 0x2C", sub: "pixels follow", v: 0x2C, cs: 0, dc: "CMD", dff: 8, fn: "lcd_set_window()" },
+    { big: "0xF800", sub: "red pixel, RGB565", v: 0xF800, cs: 0, dc: "DATA", dff: 16, px: "#ff2020", fn: "lcd_write_pixels()" },
+    { big: "0x07E0", sub: "green pixel", v: 0x07E0, cs: 0, dc: "DATA", dff: 16, px: "#20ff40", fn: "lcd_write_pixels()" },
+    { big: "0x001F", sub: "blue pixel", v: 0x001F, cs: 0, dc: "DATA", dff: 16, px: "#3050ff", fn: "lcd_write_pixels()" },
+    { big: "0xFFFF", sub: "white pixel", v: 0xFFFF, cs: 0, dc: "DATA", dff: 16, px: "#ffffff", fn: "lcd_write_pixels()" },
+    { big: "lcd_end()", sub: "close the window", end: true, cs: 1, dff: 8, fn: "lcd_end()" }
+  ];
+  function playBus(ctx) {
+    var st = { cs: 1, dc: "DATA", spe: 1, dff: 8, bsy: false }, k = 0, px = [];
+    view.innerHTML = '<h2 class="lv">DRIVE THE BUS</h2><p class="sub">You are <code>st7789.c</code>. Set the lines for each transfer, then SEND.</p>' +
+      '<div class="bus"><div><div class="queue" id="q"></div>' +
+      '<div class="panel">' +
+      '<button class="sw" id="sw-cs" type="button"><span class="k">CS · PA4 [C]</span><span class="v"></span></button>' +
+      '<button class="sw" id="sw-dc" type="button"><span class="k">DC · PA3 [D]</span><span class="v"></span></button>' +
+      '<button class="sw" id="sw-spe" type="button"><span class="k">SPE · SPI1 [E]</span><span class="v"></span></button>' +
+      '<button class="sw" id="sw-dff" type="button"><span class="k">DFF · FRAME [F]</span><span class="v"></span></button></div>' +
+      '<div class="row"><button class="btn copper" id="send" type="button">SEND ▶ [SPACE]</button><span class="leds"><span><i class="led" id="l-bsy"></i>BSY</span><span><i class="led ok" id="l-txe"></i>TXE</span></span></div>' +
+      '<div class="scope"><div class="wave"><span>SCK</span><div class="bits" id="w-sck"></div><span>MOSI</span><div class="bits" id="w-mosi"></div></div></div></div>' +
+      '<div class="tft"><div class="lbl">ST7789V · 240×320</div><div class="glass" id="glass"><i></i><i></i><i></i><i></i></div><div class="lbl" id="fnlbl"></div></div></div>' +
+      '<div class="log">CS is high: the panel is not listening. The first transfer is a command.</div>';
+    function bitsRow(id, n, lit, val, clk) {
+      var s = "";
+      for (var i = 0; i < 16; i++) {
+        var cls = i >= n ? "off" : i >= lit ? "" : clk ? "clk" : ((val >> (n - 1 - i)) & 1 ? "one" : "zero");
+        s += "<i" + (cls ? ' class="' + cls + '"' : "") + "></i>";
+      }
+      $(id).innerHTML = s;
+    }
+    function draw() {
+      var q = "";
+      STEPS.forEach(function (c, i) {
+        if (i < k - 1 || i > k + 3) return;
+        q += '<div class="card' + (i === k ? " cur" : i < k ? " done" : "") + '">' + (i === k ? esc(c.fn) : "") +
+          '<span class="big">' + esc(c.big) + '</span><span class="cs">' + esc(c.sub) + "</span></div>";
+      });
+      $("#q").innerHTML = q;
+      function sw(id, txt, hi) { var b = $(id); b.querySelector(".v").textContent = txt; b.className = "sw " + (hi ? "hi" : "lo"); }
+      sw("#sw-cs", st.cs ? "HIGH" : "LOW", st.cs); sw("#sw-dc", st.dc, st.dc === "DATA");
+      sw("#sw-spe", st.spe ? "ON" : "OFF", st.spe); sw("#sw-dff", st.dff + "-BIT", st.dff === 16);
+      $("#l-bsy").classList.toggle("on", st.bsy); $("#l-txe").classList.toggle("on", !st.bsy);
+      $("#fnlbl").textContent = k < STEPS.length ? STEPS[k].fn : "done";
+      var g = $("#glass").children; for (var i = 0; i < 4; i++) g[i].style.background = px[i] || "";
+    }
+    bitsRow("#w-sck", 8, 0, 0, true); bitsRow("#w-mosi", 8, 0, 0);
+    draw();
+    ctx.timer(100, function () { ctx.end(false, "The frame took too long: time ran out."); });
+
+    function toggle(which) {
+      if (ctx.over) return;
+      if (st.bsy && (which === "cs" || which === "dc")) {
+        ctx.bad(which === "dc" ? "DC must not change while a byte is shifting out (BSY = 1)." : "CS must not change while BSY = 1, or the last byte is cut short.");
+        return;
+      }
+      if (which === "dff" && st.spe) { ctx.bad("DFF may change only while SPI1 is disabled: turn SPE off first."); return; }
+      if (which === "cs") st.cs ^= 1;
+      if (which === "dc") st.dc = st.dc === "CMD" ? "DATA" : "CMD";
+      if (which === "spe") { if (st.bsy) { ctx.bad("Do not disable SPI1 while BSY = 1."); return; } st.spe ^= 1; }
+      if (which === "dff") st.dff = st.dff === 8 ? 16 : 8;
+      sfx.tick(); draw();
+    }
+    function send() {
+      if (ctx.over || k >= STEPS.length) return;
+      if (st.bsy) { ctx.log("Wait: BSY = 1, the previous frame is still shifting out."); return; }
+      var c = STEPS[k], errs = [];
+      if (c.end) {
+        if (st.cs !== 1) errs.push("lcd_end() raises CS (high) once BSY = 0");
+        if (st.dff !== 8) errs.push("lcd_end() returns SPI1 to 8-bit frames");
+        if (!st.spe) errs.push("leave SPI1 enabled (SPE on) for the next command");
+        if (errs.length) { ctx.bad(errs.join("; ") + "."); return; }
+        ctx.ok(200, "<code>lcd_end()</code>: BSY = 0, CS high, back to 8-bit frames. The window is closed and the pixels are on the glass.");
+        k++; draw(); setTimeout(function () { ctx.end(true); }, 1000); return;
+      }
+      if (!st.spe) errs.push("SPI1 is disabled: turn SPE on");
+      if (st.cs !== 0) errs.push("CS must be low, or the panel ignores the bus");
+      if (st.dc !== c.dc) errs.push(c.dc === "CMD" ? "this byte is a command: DC low (CMD)" : "this is a parameter or pixel: DC high (DATA)");
+      if (st.dff !== c.dff) errs.push(c.dff === 16 ? "pixels go as 16-bit frames: one RGB565 pixel per SPI1_DR write" : "commands and parameters go as 8-bit frames");
+      if (errs.length) { ctx.bad(errs.join("; ") + "."); return; }
+      st.bsy = true; draw();
+      var n = c.dff, lit = 0;
+      var id = setInterval(function () {
+        lit++; bitsRow("#w-sck", n, lit, 0, true); bitsRow("#w-mosi", n, lit, c.v);
+        if (lit >= n) {
+          clearInterval(id); st.bsy = false;
+          if (c.px) px.push(c.px);
+          k++; draw();
+          ctx.ok(c.dff === 16 ? 120 : 90, "Sent <code>" + esc(c.big) + "</code> (" + esc(c.sub) + ") as " + (c.dff === 8 ? "an " : "a ") + c.dff + "-bit frame with DC = " + c.dc + ".");
+        }
+      }, 650 / n);
+      cleanups.push(function () { clearInterval(id); });
+    }
+    // a pointer click drops focus so the SPACE shortcut always means SEND
+    function bind(id, fn) { var b = $(id); b.onclick = function (ev) { fn(); if (ev.detail) b.blur(); }; }
+    bind("#sw-cs", function () { toggle("cs"); });
+    bind("#sw-dc", function () { toggle("dc"); });
+    bind("#sw-spe", function () { toggle("spe"); });
+    bind("#sw-dff", function () { toggle("dff"); });
+    bind("#send", send);
+    keyHandler = function (e) {
+      var m = { c: "cs", d: "dc", e: "spe", f: "dff" }[e.key.toLowerCase()];
+      if (m) toggle(m);
+      if (e.key === " " && !(e.target && e.target.tagName === "BUTTON")) { e.preventDefault(); send(); }
+    };
+  }
+
+  // ---- STAGE 4: wiring ----------------------------------------------------------------
+  var WIRES = [
+    { t: "SCK", m: "PA5", n: 15, by: "SPI1_SCK", mode: "AF push-pull 50 MHz", col: "var(--blue)" },
+    { t: "SDI (MOSI)", m: "PA7", n: 17, by: "SPI1_MOSI", mode: "AF push-pull 50 MHz", col: "var(--green)" },
+    { t: "SDO (MISO)", m: "PA6", n: 16, by: "SPI1_MISO, panel ID only", mode: "input pull-down", col: "var(--violet)" },
+    { t: "CS", m: "PA4", n: 14, by: "GPIO, active low", mode: "output 50 MHz", col: "var(--red)" },
+    { t: "DC", m: "PA3", n: 13, by: "GPIO, low = command", mode: "output 50 MHz", col: "var(--copper)" },
+    { t: "RESET", m: "PA2", n: 12, by: "GPIO, active low", mode: "output 2 MHz", col: "#ff8fd0" },
+    { t: "LED", m: "PB0", n: 18, by: "TIM3_CH3 PWM, 20 kHz", mode: "AF push-pull 2 MHz", col: "var(--yellow)" }
+  ];
+  var DECOYS = [
+    { m: "PA13", n: 34, why: "PA13 is SWDIO: it belongs to the ST-Link, not the TFT." },
+    { m: "PA14", n: 37, why: "PA14 is SWCLK: it belongs to the ST-Link, not the TFT." },
+    { m: "PC13", n: 2, why: "PC13 drives the Blue Pill's own LED (active low), not the panel." }
+  ];
+  function playWire(ctx) {
+    var left = shuffle(WIRES.map(function (w, i) { return Object.assign({ i: i }, w); }));
+    var right = shuffle(WIRES.map(function (w, i) { return { m: w.m, n: w.n, i: i }; }).concat(DECOYS.map(function (d) { return { m: d.m, n: d.n, i: -1, why: d.why }; })));
+    var sel = null, done = 0;
+    var s = '<h2 class="lv">WIRE IT UP</h2><p class="sub">Pick a TFT pin, then the MCU pin it goes to. Number in brackets = LQFP48 package pin.</p>' +
+      '<div class="wire-area" id="wa"><svg class="wires" id="wsvg" aria-hidden="true"></svg><div class="col tftcol"><h3>TFT MODULE</h3>';
+    left.forEach(function (w, j) { s += '<button class="pinbtn" type="button" data-l="' + j + '">' + esc(w.t) + "<small></small></button>"; });
+    s += '</div><div class="col mcucol"><h3>STM32F103C8T6</h3>';
+    right.forEach(function (w, j) { s += '<button class="pinbtn" type="button" data-r="' + j + '">' + esc(w.m) + " <small>(" + w.n + ")</small></button>"; });
+    s += '</div></div><div class="log">VCC and GND go to 3.3 V and GND. Seven signal wires left.</div>';
+    view.innerHTML = s;
+    var links = [];
+    function redraw() {
+      var wa = $("#wa"); if (!wa) return; var box = wa.getBoundingClientRect(), p = "";
+      links.forEach(function (L) {
+        var a = view.querySelector('[data-l="' + L.l + '"]').getBoundingClientRect(), b = view.querySelector('[data-r="' + L.r + '"]').getBoundingClientRect();
+        var x1 = a.right - box.left, y1 = a.top + a.height / 2 - box.top, x2 = b.left - box.left, y2 = b.top + b.height / 2 - box.top, mx = (x1 + x2) / 2;
+        p += '<path d="M' + x1 + " " + y1 + " C" + mx + " " + y1 + " " + mx + " " + y2 + " " + x2 + " " + y2 + '" style="stroke:' + L.col + '"/>';
+      });
+      $("#wsvg").innerHTML = p;
+    }
+    window.addEventListener("resize", redraw); cleanups.push(function () { window.removeEventListener("resize", redraw); });
+    ctx.timer(70, function () { ctx.end(false, "Time ran out with wires still loose."); });
+    view.querySelectorAll("[data-l]").forEach(function (b) {
+      b.onclick = function () {
+        if (ctx.over || b.classList.contains("wired")) return;
+        view.querySelectorAll("[data-l]").forEach(function (x) { x.classList.remove("sel"); });
+        b.classList.add("sel"); sel = +b.dataset.l; sfx.tick();
+        ctx.log("TFT <b>" + esc(left[sel].t) + "</b> picked. Which MCU pin?");
+      };
+    });
+    view.querySelectorAll("[data-r]").forEach(function (b) {
+      b.onclick = function () {
+        if (ctx.over || b.classList.contains("wired")) return;
+        if (sel === null) { ctx.log("Pick a TFT pin first."); return; }
+        var w = left[sel], r = right[+b.dataset.r];
+        if (r.i === w.i) {
+          var lb = view.querySelector('[data-l="' + sel + '"]');
+          lb.classList.remove("sel"); lb.classList.add("wired"); lb.querySelector("small").textContent = "→ " + w.m;
+          b.classList.add("wired");
+          links.push({ l: sel, r: +b.dataset.r, col: w.col }); redraw();
+          done++; sel = null;
+          ctx.ok(100, "<b>" + esc(w.t) + " → " + esc(w.m) + " (" + w.n + ")</b>: driven by " + esc(w.by) + ", " + esc(w.mode) + ".");
+          if (done === WIRES.length) setTimeout(function () { ctx.end(true); }, 900);
+        } else {
+          var real = WIRES[w.i];
+          ctx.bad(r.why ? esc(r.why) : esc(r.m) + " (" + r.n + ") is the " + esc(WIRES[r.i].t) + " pin. " + esc(real.t) + " is driven by " + esc(real.by) + ": find that pin.");
+        }
+      };
+    });
+  }
+
+  // ---- STAGE 5: the boss ----------------------------------------------------------------
+  var PROPOSALS = [
+    { t: "Add a full-screen frame buffer in RAM: 240 × 320 × 2 = 153,600 bytes.", block: true, why: "20 KB of RAM: no frame buffer. Pixels stream straight to the panel." },
+    { t: "Run APB1 at 48 MHz so TIM3 counts faster.", block: true, why: "APB1 at most 36 MHz." },
+    { t: "We're at 48 MHz now. Drop the flash wait state for speed.", block: true, why: "Flash needs 1 wait state above 24 MHz." },
+    { t: "Change CORE_CLOCK_HZ in board.h. No need to touch clock.c.", block: true, why: "The clock constants in board.h must match what clock.c configures; every timing derives from them." },
+    { t: "Link the image at 0x0800 2000 instead.", block: true, why: "The image is linked at 0x0800 0000." },
+    { t: "Ship it with just one -Wpedantic warning.", block: true, why: "The build has no warnings with -Wall -Wextra -Wpedantic." },
+    { t: "Let gfx.c send RAMWR itself, it's faster.", block: true, why: "Panel commands exist only in st7789.c." },
+    { t: "Write SPI1_CR1 at its raw address 0x40013000 from gfx.c.", block: true, why: "gfx.c touches no register, and register names come only from stm32f103_regs.h." },
+    { t: "Flash with st-flash while openocd.py is still connected.", block: true, why: "Only one program can own the ST-Link at a time." },
+    { t: "Stream each glyph row through a small line buffer of 16 pixels.", block: false, why: "Streaming straight to the panel is the design; a small buffer fits in 20 KB." },
+    { t: "Keep the 512 B heap and 1 KB stack the linker script reserves.", block: false, why: "That is exactly what the linker script reserves." },
+    { t: "Call lcd_fill_pixels() from gfx.c to fill a rectangle.", block: false, why: "Graphics is built on the four st7789.h window calls: allowed." },
+    { t: "Add a missing register name to stm32f103_regs.h and use it.", block: false, why: "Register names come from stm32f103_regs.h: that is where a new one goes." }
+  ];
+  function playBoss(ctx) {
+    var list = shuffle(PROPOSALS), k = 0, hp = 9, answered = false;
+    function draw() {
+      var p = list[k];
+      view.innerHTML = '<h2 class="lv">BOSS: THE REGRESSION</h2><p class="sub">It proposes changes. BLOCK the ones that break a constraint; ALLOW the rest.</p>' +
+        '<div class="arena"><div class="hp" id="boss">' + sprite(BOSS, 10) + '<div class="hpbar"><i style="width:' + (hp / 9 * 100) + '%"></i></div>HP ' + hp + "</div>" +
+        '<div><div class="proposal"><div class="from">THE REGRESSION SAYS:</div><div class="text">"' + esc(p.t) + '"</div><div class="speech">proposal ' + (k + 1) + " · bar = time left</div>" +
+        '<div class="meter"><i id="m"></i></div></div><div class="row" style="margin-top:14px"><button class="btn red" id="blk" type="button">◀ BLOCK</button><button class="btn green" id="alw" type="button">ALLOW ▶</button></div>' +
+        '<div class="log"></div></div></div>';
+      $("#blk").onclick = function () { answer(true); };
+      $("#alw").onclick = function () { answer(false); };
+    }
+    var t = ctx.timer(10, function () {});
+    var watch = setInterval(function () {
+      if (ctx.over) return;
+      var m = $("#m"); if (m) m.style.width = (t.left() / 10 * 100) + "%";
+      if (t.left() <= 0.05 && !answered) { answered = true; if (ctx.bad("Too slow. " + esc(list[k].why))) advance(); }
+    }, 100);
+    cleanups.push(function () { clearInterval(watch); });
+    function answer(block) {
+      if (ctx.over || answered) return; answered = true;
+      var p = list[k];
+      if (block === p.block) {
+        hp--; ctx.ok(150, (p.block ? "BLOCKED. " : "ALLOWED. ") + esc(p.why));
+        var bar = view.querySelector(".hpbar i"); if (bar) bar.style.width = (hp / 9 * 100) + "%";
+        if (hp <= 0) { setTimeout(function () { ctx.end(true); }, 900); return; }
+      } else if (!ctx.bad((p.block ? "That one breaks a constraint: " : "That one was fine: ") + esc(p.why))) return;
+      advance();
+    }
+    function advance() {
+      var l = $(".log", view), msg = l.innerHTML, kind = l.className;
+      setTimeout(function () {
+        if (ctx.over) return;
+        k = (k + 1) % list.length; answered = false; draw(); t.set(10);
+        var l2 = $(".log", view); l2.innerHTML = msg; l2.className = kind;
+      }, 1300);
+    }
+    draw();
+    keyHandler = function (e) { if (e.key === "ArrowLeft") answer(true); if (e.key === "ArrowRight") answer(false); };
+  }
+
+  // ---- STAGE 6: fog of war ------------------------------------------------------------------
+  var FOG = [
+    { q: "HARDWARE", text: "Do the drivers work on this board? Nothing has been flashed or run since the project was cut down: the board did not answer on SWD on 2026-11-22.", m: "verify" },
+    { q: "OPENOCD.PY", text: "Does openocd.py work against a real chip? It was tested only against a simulated OpenOCD TCL server.", m: "verify" },
+    { q: "TFT HEADER", text: "Is the TFT header pin order right? It was taken from the common red 2.8\" SPI module, not checked against this module's silkscreen.", m: "verify" },
+    { q: "FUTURE PROJECTS", text: "Will future lcd_0N projects share drivers or copy them? No choice has been made yet.", m: "tbd" }
+  ];
+  function playFog(ctx) {
+    var solved = 0;
+    var s = '<h2 class="lv">FOG OF WAR</h2><p class="sub">The map is not finished. Open each tile and mark it: <code>&lt;to verify&gt;</code> = expected but not confirmed; <code>&lt;TBD&gt;</code> = no choice made yet.</p><div class="fog">';
+    FOG.forEach(function (f, i) { s += '<div class="cell" id="c' + i + '"><span class="q">?? ' + esc(f.q) + ' ??</span><button class="btn ghost" type="button" data-o="' + i + '">EXPLORE</button></div>'; });
+    s += '</div><div class="log">Undetermined points are recorded as uncertainty, never filled by assumption.</div>';
+    view.innerHTML = s;
+    ctx.timer(80, function () { ctx.end(false, "The fog closed in: time ran out."); });
+    view.querySelectorAll("[data-o]").forEach(function (b) {
+      b.onclick = function () {
+        if (ctx.over) return;
+        var i = +b.dataset.o, f = FOG[i], c = $("#c" + i);
+        c.classList.add("open"); sfx.tick();
+        c.innerHTML = '<span class="q">' + esc(f.q) + "</span><span>" + esc(f.text) + '</span><div class="row"><button class="btn" type="button" data-a="verify">&lt;TO VERIFY&gt;</button><button class="btn copper" type="button" data-a="tbd">&lt;TBD&gt;</button></div>';
+        c.querySelectorAll("[data-a]").forEach(function (a) {
+          a.onclick = function () {
+            if (ctx.over || c.classList.contains("solved")) return;
+            if (a.dataset.a === f.m) {
+              c.classList.add("solved"); c.querySelector(".row").outerHTML = '<span class="marker">' + (f.m === "tbd" ? "&lt;TBD&gt;" : "&lt;to verify&gt;") + " ✓</span>";
+              solved++; ctx.ok(120, f.m === "tbd" ? "<code>&lt;TBD&gt;</code>: nobody has decided yet, so there is nothing to check." : "<code>&lt;to verify&gt;</code>: there is a reasonable expectation; it waits for a confirmation.");
+              if (solved === FOG.length) setTimeout(function () { ctx.end(true); }, 900);
+            } else ctx.bad(f.m === "tbd" ? "Nothing is expected here yet: no choice has been made. That is <code>&lt;TBD&gt;</code>." : "There is an expectation, just not confirmed. That is <code>&lt;to verify&gt;</code>.");
+          };
+        });
+      };
+    });
+  }
+
+  var LEVELS = [
+    { name: "BOOT SEQUENCE", section: "Main flows: Start-up", play: playBoot,
+      brief: "The chip has just been powered. Put the start-up steps in order, from reset to <code>main()</code>. One tile is a trap: it does not run before <code>main()</code> at all.",
+      controls: "Click a tile, or press its number. 75 seconds, 3 lives." },
+    { name: "THE STACK", section: "Domains and components", play: playStack,
+      brief: "Rebuild the five layers of <code>lcd_01_hello_world</code>, top to bottom. Then judge ten calls: calls go downward only, through names.",
+      controls: "Click or press 1–5 to place a layer. Then ◀ LEGAL / ILLEGAL ▶ (arrow keys)." },
+    { name: "DRIVE THE BUS", section: "Main flows: Drawing", play: playBus,
+      brief: "Be <code>st7789.c</code>. Open a window with CASET, RASET and RAMWR, stream four RGB565 pixels, then close it with <code>lcd_end()</code>. DC must not change while a byte shifts out; DFF may change only while SPI1 is disabled.",
+      controls: "C = CS · D = DC · E = SPE · F = DFF · SPACE = send. 100 seconds, 3 lives." },
+    { name: "WIRE IT UP", section: "External dependencies and interfaces", play: playWire,
+      brief: "Connect the seven TFT signal pins to the right STM32 pins. Three pins on the chip are decoys from other parts of the board.",
+      controls: "Click a TFT pin, then an MCU pin. 70 seconds, 3 lives." },
+    { name: "THE REGRESSION", section: "Constraints to preserve", play: playBoss,
+      brief: "The boss proposes changes to the firmware. BLOCK any that break a constraint or a boundary; ALLOW the ones that respect them. Nine correct calls defeat it.",
+      controls: "◀ BLOCK / ALLOW ▶ (arrow keys or buttons). 10 seconds per proposal, 3 lives." },
+    { name: "FOG OF WAR", section: "Undetermined points", play: playFog,
+      brief: "Not everything on the map is known. Explore the four open points and mark each one: expected but still to verify, or not decided yet.",
+      controls: "EXPLORE a tile, then pick its marker. 80 seconds, 3 lives." }
+  ];
+
+  // ---- global controls ----------------------------------------------------------------
+  $("#b-map").onclick = map;
+  $("#b-codex").onclick = function () { codex(); };
+  $("#b-sound").onclick = function () { save.sound = !save.sound; persist(); syncSound(); };
+  document.addEventListener("keydown", function (e) {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    if (e.key === "m" || e.key === "M") { map(); return; }
+    if ((e.key === "s" || e.key === "S")) { save.sound = !save.sound; persist(); syncSound(); return; }
+    if (keyHandler) {
+      if (e.key === "Enter" && e.target && e.target.tagName === "BUTTON") return;   // the button's own click handles it
+      keyHandler(e);
+    }
+  });
+  syncSound();
+  title();
+})();
+</script>
+</body>
+</html>
