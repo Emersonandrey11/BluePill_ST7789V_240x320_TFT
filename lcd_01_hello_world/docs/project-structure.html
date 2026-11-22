@@ -1,0 +1,861 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+</head>
+<body>
+<title>LCD Hello World Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one 1040px column read top to bottom, like a board's assembly drawing:
+   layers -> files -> boot -> memory -> clocks -> wiring -> build -> where to start.
+   Accent = Blue Pill soldermask blue; secondary = copper pad. */
+:root {
+  --bg: #f4f6fa;
+  --surface: #ffffff;
+  --sunk: #eaeef5;
+  --ink: #15203a;
+  --muted: #56627b;
+  --line: #d6dde9;
+  --pcb: #1f4fa0;
+  --pcb-soft: #e1e9f8;
+  --copper: #a8661c;
+  --copper-soft: #f6eadb;
+  --r-yours: #a8661c;
+  --r-lcd: #1f4fa0;
+  --r-sys: #1d7a6f;
+  --r-build: #6a4fa3;
+  --r-tools: #5b6b2b;
+  --r-meta: #6b7385;
+  --f-display: "Barlow Semi Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --f-body: "IBM Plex Sans", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0c1220; --surface: #131c2e; --sunk: #0f1726; --ink: #e5eaf4; --muted: #95a1b9; --line: #26324b;
+    --pcb: #79a2f0; --pcb-soft: #1a2a4a; --copper: #e3a25c; --copper-soft: #33261a;
+    --r-yours: #e3a25c; --r-lcd: #79a2f0; --r-sys: #4fc1b1; --r-build: #a993e0; --r-tools: #a9bf6a; --r-meta: #98a1b3;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0c1220; --surface: #131c2e; --sunk: #0f1726; --ink: #e5eaf4; --muted: #95a1b9; --line: #26324b;
+  --pcb: #79a2f0; --pcb-soft: #1a2a4a; --copper: #e3a25c; --copper-soft: #33261a;
+  --r-yours: #e3a25c; --r-lcd: #79a2f0; --r-sys: #4fc1b1; --r-build: #a993e0; --r-tools: #a9bf6a; --r-meta: #98a1b3;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font: 15px/1.6 var(--f-body);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 40px 72px;
+}
+.page { max-width: 1040px; margin: 0 auto; display: grid; gap: 56px; }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.1; }
+h1 { font-size: clamp(36px, 6vw, 56px); font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 30px; font-weight: 600; }
+h3 { font-size: 19px; font-weight: 600; }
+p { margin: 0; max-width: 68ch; }
+code, .mono { font-family: var(--f-mono); font-size: 0.9em; }
+:not(pre) > code { background: var(--sunk); padding: 1px 5px; border-radius: 4px; }
+a { color: var(--pcb); }
+:focus-visible { outline: 2px solid var(--pcb); outline-offset: 2px; }
+.eyebrow {
+  font: 500 12px/1 var(--f-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted);
+}
+section { display: grid; gap: 18px; }
+.sec-head { display: grid; gap: 8px; }
+.sec-head p { color: var(--muted); }
+
+/* ---- header ---- */
+header { display: grid; gap: 18px; }
+.silk {
+  display: inline-flex; flex-wrap: wrap; gap: 6px 14px; font: 500 12px/1.4 var(--f-mono);
+  letter-spacing: 0.06em; text-transform: uppercase; color: var(--pcb);
+}
+.silk span + span::before { content: "·"; margin-right: 14px; color: var(--muted); }
+.toc { display: flex; flex-wrap: wrap; gap: 6px 18px; font: 500 13.5px var(--f-body); }
+.toc a { text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--pcb) 40%, transparent); }
+.toc a:hover { border-bottom-color: var(--pcb); }
+.lede { font-size: 17px; color: var(--muted); max-width: 64ch; }
+.spec {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden;
+}
+.spec div { padding: 14px 16px; display: grid; gap: 4px; min-width: 0; }
+.spec div + div { border-left: 1px solid var(--line); }
+.spec b { font: 600 22px/1.1 var(--f-display); font-variant-numeric: tabular-nums; }
+.spec small { color: var(--muted); font-size: 12.5px; }
+@media (max-width: 720px) {
+  .spec { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .spec div:nth-child(3) { border-left: 0; }
+  .spec div:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
+
+/* ---- layers ---- */
+.layers { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 20px; align-items: start; }
+@media (max-width: 820px) { .layers { grid-template-columns: minmax(0, 1fr); } }
+.stack { display: grid; gap: 0; }
+.layer {
+  display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; align-items: start;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px;
+}
+.layer.you { border-color: var(--copper); background: var(--copper-soft); }
+.layer.hw { background: var(--sunk); border-style: dashed; }
+.layer .who { display: grid; gap: 2px; }
+.layer .who .mono { font-weight: 500; font-size: 14px; }
+.layer .who small { color: var(--muted); font-size: 12px; }
+.layer .what { display: grid; gap: 8px; min-width: 0; }
+.fns { display: flex; flex-wrap: wrap; gap: 6px; }
+.fns code { font-size: 12.5px; background: var(--sunk); border: 1px solid var(--line); padding: 1px 6px; border-radius: 4px; }
+.layer.you .fns code { background: var(--surface); }
+.calls {
+  display: flex; align-items: center; gap: 8px; padding: 4px 0 4px 66px;
+  font: 500 11px/1 var(--f-mono); color: var(--muted); letter-spacing: 0.05em; text-transform: uppercase;
+}
+.calls::before { content: ""; width: 1px; height: 18px; background: var(--muted); }
+.rail { display: grid; gap: 10px; }
+.rail .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; }
+.rail .card .mono { font-weight: 500; }
+.rail .card p { font-size: 13.5px; color: var(--muted); }
+.rule {
+  font-size: 14px; color: var(--ink); background: var(--pcb-soft); border-radius: 8px; padding: 10px 14px; max-width: none;
+}
+@media (max-width: 520px) {
+  .layer { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .calls { padding-left: 16px; }
+}
+
+/* ---- file tree ---- */
+.legend { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  font: 500 12.5px/1 var(--f-body); border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  border-radius: 999px; padding: 7px 12px 7px 10px; display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+}
+.chip i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); display: inline-block; }
+.chip[aria-pressed="true"] { border-color: var(--c); box-shadow: inset 0 0 0 1px var(--c); }
+.tree-wrap { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow-x: auto; }
+.tree { list-style: none; margin: 0; padding: 8px 0; min-width: 560px; }
+.tree li { display: grid; grid-template-columns: minmax(190px, 260px) minmax(0, 1fr) 54px; gap: 14px; padding: 6px 16px; align-items: baseline; transition: opacity .15s; }
+.tree li.dir { padding-top: 12px; }
+.tree li.dir .name { font-weight: 500; color: var(--ink); }
+.tree .name { font-family: var(--f-mono); font-size: 13.5px; white-space: nowrap; display: flex; gap: 8px; align-items: baseline; }
+.tree .name::before { content: ""; flex: none; width: 8px; height: 8px; border-radius: 2px; background: var(--c, transparent); transform: translateY(-1px); }
+.tree .ind1 { padding-left: 22px; }
+.tree .desc { color: var(--muted); font-size: 13.5px; min-width: 0; }
+.tree .desc strong { color: var(--ink); font-weight: 500; }
+.tree .loc { font: 12px var(--f-mono); color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.tree li:nth-child(even) { background: color-mix(in srgb, var(--sunk) 45%, transparent); }
+.tree.filtering li[data-role]:not(.on) { opacity: 0.28; }
+.r-yours { --c: var(--r-yours); } .r-lcd { --c: var(--r-lcd); } .r-sys { --c: var(--r-sys); }
+.r-build { --c: var(--r-build); } .r-tools { --c: var(--r-tools); } .r-meta { --c: var(--r-meta); }
+.warn { color: var(--copper); font-weight: 500; }
+
+/* ---- memory ---- */
+.mem { display: grid; gap: 26px; }
+.membar { display: grid; gap: 8px; }
+.membar .top { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+.membar .top span { font: 12.5px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar { display: flex; height: 34px; border-radius: 6px; overflow: hidden; background: var(--sunk); border: 1px solid var(--line); }
+.bar > div { height: 100%; min-width: 2px; }
+.bar .gap { flex: 1; }
+.seg-vec { background: var(--pcb); } .seg-text { background: color-mix(in srgb, var(--pcb) 60%, var(--surface)); }
+.seg-misc { background: var(--r-build); } .seg-data { background: var(--r-sys); }
+.seg-heap { background: color-mix(in srgb, var(--r-sys) 45%, var(--surface)); }
+.seg-stack { background: var(--copper); }
+.axis { display: flex; justify-content: space-between; font: 11.5px var(--f-mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.keys { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.keys span { display: inline-flex; align-items: center; gap: 6px; }
+.keys i { width: 11px; height: 11px; border-radius: 2px; display: inline-block; }
+.zoom { display: grid; gap: 6px; margin-top: 4px; padding: 12px 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+.zoom .bar { height: 26px; }
+.note { font-size: 14px; color: var(--muted); }
+
+/* ---- clocks ---- */
+.clk { display: grid; gap: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; overflow-x: auto; }
+.clk ul { list-style: none; margin: 0; padding: 0; }
+.clk ul ul { padding-left: 26px; border-left: 1.5px solid var(--line); margin-left: 10px; }
+.clk li { padding: 5px 0 5px 0; position: relative; min-width: 0; }
+.clk ul ul > li::before { content: ""; position: absolute; left: -26px; top: 18px; width: 20px; border-top: 1.5px solid var(--line); }
+.node { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.node b { font: 600 16px var(--f-display); white-space: nowrap; }
+.node .hz { font: 500 13px var(--f-mono); color: var(--pcb); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.node .op { font: 12px var(--f-mono); color: var(--copper); white-space: nowrap; }
+.node small { color: var(--muted); font-size: 13px; }
+
+/* ---- tables ---- */
+.tbl-wrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; min-width: 600px; font-size: 14px; }
+th, td { text-align: left; padding: 9px 14px; border-bottom: 1px solid var(--line); vertical-align: baseline; }
+th { font: 500 11.5px/1.2 var(--f-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); background: var(--sunk); }
+tr:last-child td { border-bottom: 0; }
+td.pin { font: 500 13.5px var(--f-mono); color: var(--pcb); white-space: nowrap; }
+td code { font-size: 12.5px; }
+
+/* ---- pipeline ---- */
+.pipe { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 820px) { .pipe { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 480px) { .pipe { grid-template-columns: minmax(0, 1fr); } }
+.pipe > div { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.pipe .eyebrow { color: var(--pcb); }
+.pipe p { font-size: 13.5px; color: var(--muted); }
+pre {
+  margin: 0; font: 12.5px/1.55 var(--f-mono); background: var(--sunk); border: 1px solid var(--line);
+  border-radius: 8px; padding: 10px 12px; overflow-x: auto; color: var(--ink);
+}
+.cols2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 760px) { .cols2 { grid-template-columns: minmax(0, 1fr); } }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.panel ol { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 14px; }
+.panel ol li::marker { font-family: var(--f-mono); color: var(--copper); }
+.panel p { font-size: 14px; color: var(--muted); }
+/* ---- start-up detail ---- */
+.timeline { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; counter-reset: t; }
+.timeline li {
+  counter-increment: t; display: grid; gap: 2px; padding: 8px 12px 8px 34px; position: relative;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 8px; min-width: 0;
+}
+.timeline li::before {
+  content: counter(t); position: absolute; left: 10px; top: 9px; font: 600 13px/1 var(--f-display); color: var(--pcb);
+}
+.timeline li b { font: 600 14px/1.2 var(--f-display); }
+.timeline li span { font: 11.5px/1.2 var(--f-mono); color: var(--muted); }
+.timeline li.end { border-color: var(--copper); background: var(--copper-soft); }
+.timeline li.end::before { color: var(--copper); }
+.stage { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 16px; position: relative; }
+.stage:not(.last)::after { content: ""; position: absolute; left: 15px; top: 36px; bottom: -18px; width: 1.5px; background: var(--line); }
+.stage-num {
+  width: 32px; height: 32px; border-radius: 50%; border: 1.5px solid var(--pcb); color: var(--pcb); background: var(--bg);
+  font: 600 16px/29px var(--f-display); text-align: center; z-index: 1;
+}
+.stage.last .stage-num { background: var(--copper); border-color: var(--copper); color: var(--surface); }
+.stage-body { display: grid; gap: 12px; min-width: 0; padding-top: 3px; }
+.stage-body > h3 { font-size: 22px; }
+.stage-body > p { font-size: 14.5px; }
+.boot-sec { gap: 26px; }
+.pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .pair { grid-template-columns: minmax(0, 1fr); } .stage { grid-template-columns: minmax(0, 1fr); gap: 8px; } .stage::after { display: none; } }
+.mini { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 4px; min-width: 0; }
+.mini b { font: 500 20px/1.2 var(--f-mono); color: var(--pcb); }
+.mini small { color: var(--muted); font-size: 13px; }
+.v { font-family: var(--f-mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.v { font-size: 12.5px; }
+table.compact { min-width: 640px; font-size: 13.5px; }
+table.compact td, table.compact th { padding: 8px 12px; }
+table.compact tr.hl td { background: var(--pcb-soft); }
+table.steps td.n { font: 600 15px var(--f-display); color: var(--copper); width: 28px; }
+table.steps td:nth-child(3) { min-width: 210px; }
+table.steps td:nth-child(3) code { white-space: nowrap; }
+pre.asm { font-size: 12.5px; line-height: 1.6; }
+pre.asm .a { color: var(--muted); }
+pre.asm .c { color: var(--r-sys); }
+pre.asm .k { color: var(--r-build); }
+.aside { font-size: 13.5px; color: var(--muted); }
+.ticks { margin: 0; padding-left: 18px; display: grid; gap: 6px; font-size: 14px; }
+.panel.ready { border-color: color-mix(in srgb, var(--r-sys) 55%, var(--line)); }
+.panel.todo { border-color: color-mix(in srgb, var(--copper) 60%, var(--line)); }
+.panel.todo .ticks li::marker { color: var(--copper); }
+.panel.ready .ticks li::marker { color: var(--r-sys); }
+.panel.watch { background: var(--sunk); }
+.panel.watch pre { background: var(--surface); }
+footer { color: var(--muted); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="page">
+
+<header>
+  <div class="silk"><span>STM32F103C8T6 Blue Pill</span><span>ST7789V 240×320 TFT</span><span>Bare metal, no HAL</span></div>
+  <h1>LCD Hello World</h1>
+  <p class="lede">How the <code>lcd_01_hello_world</code> project is put together: which file does what, how the code is layered, everything the chip does between reset and <code>main()</code>, and where everything ends up in memory.</p>
+  <div class="spec" aria-label="Current build">
+    <div><span class="eyebrow">Flash used</span><b>1,056 B</b><small>of 64 KB (1.6 %)</small></div>
+    <div><span class="eyebrow">RAM used</span><b>1,984 B</b><small>of 20 KB, incl. stack</small></div>
+    <div><span class="eyebrow">Core clock</span><b>48 MHz</b><small>8 MHz crystal × 6</small></div>
+    <div><span class="eyebrow">LCD bus</span><b>SPI1, 12 MHz</b><small>mode 0, PA5 / PA7</small></div>
+  </div>
+  <nav class="toc" aria-label="On this page">
+    <a href="#h-layers">Layers</a><a href="#h-files">Files</a><a href="#h-boot">Before main()</a><a href="#h-mem">Memory</a><a href="#h-clk">Clocks</a><a href="#h-wire">Wiring</a><a href="#h-build">Build</a><a href="#h-start">Where to start</a>
+  </nav>
+</header>
+
+<section aria-labelledby="h-layers">
+  <div class="sec-head">
+    <span class="eyebrow">Architecture</span>
+    <h2 id="h-layers">Four layers, each calling only the one below</h2>
+    <p>Your application talks in rectangles and text. Each layer below turns that into something simpler, until the bottom layer is just writes to hardware registers.</p>
+  </div>
+  <div class="layers">
+    <div class="stack">
+      <div class="layer you">
+        <div class="who"><span class="mono">main.c</span><small>Application · yours</small></div>
+        <div class="what">
+          <p>Empty on purpose. You decide what to draw and when. <code>SystemInit()</code> has already set the clock to 48 MHz before <code>main()</code> starts.</p>
+          <div class="fns"><code>int main(void) { for (;;) { } }</code></div>
+        </div>
+      </div>
+      <div class="calls">calls</div>
+      <div class="layer">
+        <div class="who"><span class="mono">gfx.c</span><small>Drawing + font_data.c</small></div>
+        <div class="what">
+          <p>Filled rectangles and fixed-width text. Each glyph is sent as one small window; drawing the background pixels too means old text is overwritten without flicker.</p>
+          <div class="fns"><code>gfx_fill_rect</code><code>gfx_char</code><code>gfx_text</code><code>RGB565()</code><code>font_small 7×14</code><code>font_big 9×18</code></div>
+        </div>
+      </div>
+      <div class="calls">calls</div>
+      <div class="layer">
+        <div class="who"><span class="mono">st7789.c</span><small>Panel driver</small></div>
+        <div class="what">
+          <p>Knows the ST7789V command set. Resets the panel, sends the init sequence (SLPOUT, COLMOD 0x55, MADCTL, DISPON), opens a drawing window and streams RGB565 pixels. Also owns the CS / DC / RESET pins and the TIM3 backlight PWM.</p>
+          <div class="fns"><code>lcd_init</code><code>lcd_set_window</code><code>lcd_write_pixels</code><code>lcd_fill_pixels</code><code>lcd_end</code><code>lcd_backlight</code></div>
+        </div>
+      </div>
+      <div class="calls">calls</div>
+      <div class="layer">
+        <div class="who"><span class="mono">spi.c</span><small>Bus driver</small></div>
+        <div class="what">
+          <p>SPI1 master, polling, no interrupts. Commands go out as 8-bit frames, pixels as 16-bit frames so one RGB565 pixel is one write to <code>SPI1_DR</code>.</p>
+          <div class="fns"><code>spi1_init</code><code>spi1_send</code><code>spi1_flush</code><code>spi1_frame16</code><code>spi1_transfer</code></div>
+        </div>
+      </div>
+      <div class="calls">writes</div>
+      <div class="layer">
+        <div class="who"><span class="mono">stm32f103_regs.h</span><small>Register names</small></div>
+        <div class="what">
+          <p>Hand-written addresses and bit names from the reference manual (RM0008). Every register access in the project goes through these names: no CMSIS, no HAL.</p>
+          <div class="fns"><code>SPI1_CR1</code><code>SPI1_SR</code><code>GPIO_BSRR()</code><code>RCC_APB2ENR</code><code>TIM3_CCR3</code><code>gpio_config()</code></div>
+        </div>
+      </div>
+      <div class="calls">memory-mapped</div>
+      <div class="layer hw">
+        <div class="who"><span class="mono">Hardware</span><small>Silicon + panel</small></div>
+        <div class="what"><p>SPI1 at 0x4001&nbsp;3000 shifts the bits out on PA5 / PA7; the ST7789V stores them in its own 240×320 frame memory and keeps refreshing the glass by itself.</p></div>
+      </div>
+    </div>
+
+    <aside class="rail" aria-label="Used by every layer">
+      <span class="eyebrow">Shared by every layer</span>
+      <div class="card"><span class="mono">board.h</span><p>Clock frequencies (<code>PCLK2_HZ</code> …), the LCD pin map and panel options <code>LCD_MADCTL</code>, <code>LCD_INVERT</code>, <code>LCD_BRIGHTNESS</code>.</p></div>
+      <div class="card"><span class="mono">timebase.c</span><p>SysTick at 1 ms: <code>millis()</code> and <code>delay_ms()</code>. The panel reset needs 120 ms waits.</p></div>
+      <div class="card"><span class="mono">clock.c</span><p><code>SystemInit()</code> runs once, before <code>main()</code>, and sets every clock the layers depend on.</p></div>
+      <div class="card"><span class="mono">startup_stm32f103xx.S</span><p>Vector table and <code>Reset_Handler</code>. Supplied by ST.</p></div>
+    </aside>
+  </div>
+  <p class="rule">The drivers are compiled on every build, but the linker discards any function nothing calls (<code>--gc-sections</code>). Today the image holds only startup, clock and SysTick code. The first call to <code>lcd_init()</code> in <code>main.c</code> pulls in <code>st7789.c</code> and <code>spi.c</code>.</p>
+</section>
+
+<section aria-labelledby="h-files">
+  <div class="sec-head">
+    <span class="eyebrow">Folder</span>
+    <h2 id="h-files">Every file and what it is for</h2>
+    <p>Pick a role to highlight its files. Line counts are from the current tree.</p>
+  </div>
+  <div class="legend" role="group" aria-label="Highlight by role">
+    <button class="chip r-yours" data-role="yours" aria-pressed="false" type="button"><i></i>Your code</button>
+    <button class="chip r-lcd" data-role="lcd" aria-pressed="false" type="button"><i></i>LCD drivers</button>
+    <button class="chip r-sys" data-role="sys" aria-pressed="false" type="button"><i></i>Startup &amp; system</button>
+    <button class="chip r-build" data-role="build" aria-pressed="false" type="button"><i></i>Build &amp; flash</button>
+    <button class="chip r-tools" data-role="tools" aria-pressed="false" type="button"><i></i>Tools</button>
+    <button class="chip r-meta" data-role="meta" aria-pressed="false" type="button"><i></i>Docs &amp; editor</button>
+  </div>
+  <div class="tree-wrap">
+    <ul class="tree" id="tree">
+      <li class="dir"><span class="name">Src/</span><span class="desc">C and assembly sources</span><span class="loc"></span></li>
+      <li class="r-yours" data-role="yours"><span class="name ind1">main.c</span><span class="desc"><strong>Your application.</strong> An empty super loop, ready for you.</span><span class="loc">21</span></li>
+      <li class="r-lcd" data-role="lcd"><span class="name ind1">st7789.c</span><span class="desc">Panel driver: reset, init sequence, window, pixels, backlight PWM on TIM3.</span><span class="loc">192</span></li>
+      <li class="r-lcd" data-role="lcd"><span class="name ind1">spi.c</span><span class="desc">SPI1 master driver (polling, 8/16-bit frames).</span><span class="loc">111</span></li>
+      <li class="r-lcd" data-role="lcd"><span class="name ind1">gfx.c</span><span class="desc">Rectangles and text on top of the four window calls.</span><span class="loc">51</span></li>
+      <li class="r-lcd" data-role="lcd"><span class="name ind1">font_data.c</span><span class="desc">Bitmap fonts, generated by <code>tools/gen_font.py</code>. Do not edit by hand.</span><span class="loc">206</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">clock.c</span><span class="desc"><code>SystemInit()</code>: crystal 8 MHz × 6 = 48 MHz, flash wait state, VTOR.</span><span class="loc">67</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">timebase.c</span><span class="desc">SysTick 1 ms tick, <code>millis()</code>, <code>delay_ms()</code>.</span><span class="loc">35</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">startup_stm32f103xx.S</span><span class="desc">Vector table (76 entries) and <code>Reset_Handler</code>. From ST.</span><span class="loc">419</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">syscall.c · sysmem.c</span><span class="desc">Small C library stubs (<code>_sbrk</code>, <code>_write</code> …) so newlib links.</span><span class="loc">331</span></li>
+
+      <li class="dir"><span class="name">Inc/</span><span class="desc">Headers: one per driver, plus the two shared ones</span><span class="loc"></span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">stm32f103_regs.h</span><span class="desc"><strong>Register map.</strong> Addresses and bit names; add any register you need here.</span><span class="loc">291</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">board.h</span><span class="desc">Clock constants, LCD pin map, panel options.</span><span class="loc">40</span></li>
+      <li class="r-lcd" data-role="lcd"><span class="name ind1">st7789.h · spi.h · gfx.h · font.h</span><span class="desc">The public API of each LCD layer, with usage notes.</span><span class="loc">102</span></li>
+      <li class="r-sys" data-role="sys"><span class="name ind1">clock.h · timebase.h</span><span class="desc">Clock and tick functions.</span><span class="loc">29</span></li>
+
+      <li class="dir"><span class="name">Project root</span><span class="desc"></span><span class="loc"></span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">stm32f103x8_flash.ld</span><span class="desc">Linker script: flash 64 KB at 0x0800&nbsp;0000, RAM 20 KB at 0x2000&nbsp;0000, 512 B heap, 1 KB stack.</span><span class="loc">225</span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">CMakeLists.txt</span><span class="desc"><strong>Add new .c files here</strong> (<code>target_sources</code>).</span><span class="loc">70</span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">CMakePresets.json</span><span class="desc">Debug (-O0 -g3) and Release (-Os) presets, Ninja generator.</span><span class="loc">34</span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">cmake/</span><span class="desc">Toolchain, CPU and linker flags. <span class="warn">Managed by the STM32Cube extension: do not edit.</span></span><span class="loc">349</span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">flash.sh · flash.ps1</span><span class="desc">Build Debug, then write <code>lcd.bin</code> at 0x0800&nbsp;0000 over ST-Link (Linux / Windows).</span><span class="loc">119</span></li>
+      <li class="r-tools" data-role="tools"><span class="name ind1">openocd.py</span><span class="desc">OpenOCD tutorial and live inspector: chip info, decoded registers, fault analysis, flashing.</span><span class="loc">2254</span></li>
+      <li class="r-tools" data-role="tools"><span class="name ind1">tools/gen_font.py</span><span class="desc">Regenerates <code>font_data.c</code> and <code>font.h</code> from X11 bitmap fonts.</span><span class="loc">111</span></li>
+      <li class="r-meta" data-role="meta"><span class="name ind1">HARDWARE.md</span><span class="desc">Wiring table for the TFT.</span><span class="loc">22</span></li>
+      <li class="r-meta" data-role="meta"><span class="name ind1">CLAUDE.md</span><span class="desc">Project notes for Claude Code.</span><span class="loc">67</span></li>
+      <li class="r-meta" data-role="meta"><span class="name ind1">project-description.json · .settings/</span><span class="desc">STM32Cube VS Code extension metadata (managed).</span><span class="loc"></span></li>
+      <li class="r-meta" data-role="meta"><span class="name ind1">.vscode/ · .clangd</span><span class="desc">Editor setup; clangd reads <code>build/Debug/compile_commands.json</code>.</span><span class="loc"></span></li>
+      <li class="r-meta" data-role="meta"><span class="name ind1">GITHUB.md</span><span class="desc"><span class="warn">Holds a token. Local only, excluded from git; never commit it.</span></span><span class="loc"></span></li>
+      <li class="r-build" data-role="build"><span class="name ind1">build/Debug/</span><span class="desc">Generated: <code>lcd.elf</code> (with symbols), <code>lcd.bin</code>, <code>lcd.map</code>. Ignored by git.</span><span class="loc"></span></li>
+    </ul>
+  </div>
+</section>
+
+<section aria-labelledby="h-boot" class="boot-sec">
+  <div class="sec-head">
+    <span class="eyebrow">Start-up, in detail</span>
+    <h2 id="h-boot">Everything that happens before <code>main()</code></h2>
+    <p>From the moment the chip comes out of reset to the first line of <code>main.c</code> takes a few milliseconds, most of it spent waiting for the crystal. Every address, value and instruction below is taken from the current Debug build (<code>build/Debug/lcd.elf</code>).</p>
+  </div>
+
+  <ol class="timeline" aria-label="Start-up sequence">
+    <li><b>Reset</b><span>HSI 8 MHz</span></li>
+    <li><b>Boot pins</b><span>flash at 0x0</span></li>
+    <li><b>Vector fetch</b><span>SP, PC by hardware</span></li>
+    <li><b>Reset_Handler</b><span>sets SP</span></li>
+    <li><b>SystemInit</b><span>8 → 48 MHz</span></li>
+    <li><b>Copy .data</b><span>4 B</span></li>
+    <li><b>Zero .bss</b><span>440 B</span></li>
+    <li><b>C library init</b><span>2 functions</span></li>
+    <li class="end"><b>main()</b><span>0x0800 0290</span></li>
+  </ol>
+
+  <!-- 1 -->
+  <article class="stage">
+    <div class="stage-num">1</div>
+    <div class="stage-body">
+      <h3>Something resets the chip</h3>
+      <p>A reset can come from the supply rising at power-on, the RESET button pulling the NRST pin low, software (the core's <code>SYSRESETREQ</code> bit, the usual way a debugger resets the chip), or a watchdog. Each sets a flag in <code>RCC_CSR</code>, which stays set until firmware clears it, so you can always ask afterwards why the chip restarted.</p>
+      <p>Every register then takes its reset value from the reference manual (RM0008). This is the state the start-up code has to work from:</p>
+      <div class="tbl-wrap">
+        <table class="compact">
+          <thead><tr><th>Part</th><th>State after reset</th><th>Register</th><th>Reset value</th></tr></thead>
+          <tbody>
+            <tr><td>System clock</td><td>Internal RC oscillator (HSI) at 8 MHz. Crystal and PLL off.</td><td><code>RCC_CFGR</code></td><td class="v">0x0000 0000</td></tr>
+            <tr><td>Flash access</td><td>0 wait states, prefetch on. Fine up to 24 MHz.</td><td><code>FLASH_ACR</code></td><td class="v">0x0000 0030</td></tr>
+            <tr><td>Peripheral clocks</td><td>All off except SRAM and the flash interface. A peripheral without clock reads 0 and ignores writes.</td><td><code>RCC_AHBENR</code><br><code>RCC_APB1/2ENR</code></td><td class="v">0x0000 0014<br>0x0000 0000</td></tr>
+            <tr><td>GPIO pins</td><td>Every pin is a floating input, so the LCD's CS, DC and RESET lines float until you configure them.</td><td><code>GPIOx_CRL/CRH</code></td><td class="v">0x4444 4444</td></tr>
+            <tr><td>Debug port</td><td>PA13 (SWDIO), PA14 (SWCLK) and the JTAG pins PA15, PB3, PB4 are taken by the debug port.</td><td><code>AFIO_MAPR</code></td><td class="v">SWJ_CFG = 000</td></tr>
+            <tr><td>Core</td><td>Thread mode, privileged, main stack (MSP). Interrupts are not masked, but none is enabled in the NVIC.</td><td><code>CONTROL</code>, <code>PRIMASK</code></td><td class="v">0, 0</td></tr>
+            <tr><td>SysTick</td><td>Stopped.</td><td><code>SYST_CSR</code></td><td class="v">0x0000 0000</td></tr>
+            <tr><td>Vector table base</td><td>Address 0.</td><td><code>SCB_VTOR</code></td><td class="v">0x0000 0000</td></tr>
+            <tr><td>SRAM</td><td>Random after power-on; unchanged after any other reset. Either way your variables are not initialised yet.</td><td></td><td class="v">undefined</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </article>
+
+  <!-- 2 -->
+  <article class="stage">
+    <div class="stage-num">2</div>
+    <div class="stage-body">
+      <h3>The boot pins decide what appears at address 0</h3>
+      <p>The Cortex-M3 always starts by reading address <code>0x0000 0000</code>. The STM32 samples its BOOT0 and BOOT1 pins on the 4th clock edge after reset and maps (aliases) one of three memories there. The memory stays reachable at its own address too.</p>
+      <div class="tbl-wrap">
+        <table class="compact">
+          <thead><tr><th>BOOT1 (PB2)</th><th>BOOT0</th><th>Mapped at 0x0000 0000</th><th>Use</th></tr></thead>
+          <tbody>
+            <tr class="hl"><td>x</td><td>0</td><td>Main flash, <code>0x0800 0000</code></td><td>Normal: runs your program. The Blue Pill's BOOT0 jumper sits on 0.</td></tr>
+            <tr><td>0</td><td>1</td><td>System memory, <code>0x1FFF F000</code></td><td>ST's built-in serial bootloader (UART1). Also a rescue mode when your firmware blocks SWD.</td></tr>
+            <tr><td>1</td><td>1</td><td>SRAM, <code>0x2000 0000</code></td><td>Running code loaded into RAM by a debugger.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </article>
+
+  <!-- 3 -->
+  <article class="stage">
+    <div class="stage-num">3</div>
+    <div class="stage-body">
+      <h3>The core reads two words: no code has run yet</h3>
+      <p>The hardware itself loads the stack pointer from the first word and the program counter from the second. Bit 0 of the reset address is 1: on Cortex-M that bit means "Thumb code" (the only instruction set it has), and it is dropped when the address goes into PC. From here on the core runs from the real flash address <code>0x0800 xxxx</code>, not the alias.</p>
+      <div class="pair">
+        <div class="mini"><span class="eyebrow">0x0000 0000 → SP</span><b class="v">0x2000 5000</b><small><code>_estack</code>: one byte past the end of the 20 KB RAM. The stack grows down from here.</small></div>
+        <div class="mini"><span class="eyebrow">0x0000 0004 → PC</span><b class="v">0x0800 0299</b><small>Address of <code>Reset_Handler</code> (0x0800 0298) + 1 for Thumb.</small></div>
+      </div>
+      <p>Those two words are the start of the <strong>vector table</strong> (<code>g_pfnVectors</code> in <code>startup_stm32f103xx.S</code>): 76 addresses, 304 bytes, that the core uses whenever an exception or interrupt happens. The linker script places it first in flash with <code>KEEP(*(.isr_vector))</code>, so it is never discarded even though no code calls it.</p>
+      <div class="tbl-wrap">
+        <table class="compact">
+          <thead><tr><th>Offset</th><th>Entry</th><th>Value in your image</th><th>Goes to</th></tr></thead>
+          <tbody>
+            <tr><td class="v">0x00</td><td>Initial stack pointer</td><td class="v">0x2000 5000</td><td><code>_estack</code></td></tr>
+            <tr class="hl"><td class="v">0x04</td><td>Reset</td><td class="v">0x0800 0299</td><td><code>Reset_Handler</code></td></tr>
+            <tr><td class="v">0x08</td><td>NMI</td><td class="v">0x0800 02E9</td><td><code>Default_Handler</code></td></tr>
+            <tr><td class="v">0x0C</td><td>HardFault</td><td class="v">0x0800 02E9</td><td><code>Default_Handler</code></td></tr>
+            <tr><td class="v">0x10–0x18</td><td>MemManage, BusFault, UsageFault</td><td class="v">0x0800 02E9</td><td><code>Default_Handler</code></td></tr>
+            <tr><td class="v">0x1C–0x28</td><td>Reserved</td><td class="v">0</td><td></td></tr>
+            <tr><td class="v">0x2C–0x38</td><td>SVCall, DebugMon, (reserved), PendSV</td><td class="v">0x0800 02E9<br>(0x34: 0)</td><td><code>Default_Handler</code></td></tr>
+            <tr class="hl"><td class="v">0x3C</td><td>SysTick</td><td class="v">0x0800 03DD</td><td><code>SysTick_Handler</code> in <code>timebase.c</code></td></tr>
+            <tr><td class="v">0x40–0x12C</td><td>IRQ 0 – IRQ 59 (WWDG … TIM7)</td><td class="v">0x0800 02E9<br>(0xE8, a reserved slot: 0)</td><td><code>Default_Handler</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>How one handler gets a real function and the others don't: the startup file declares every handler as a <em>weak</em> alias of <code>Default_Handler</code>. A normal definition anywhere else wins over a weak one, so <code>timebase.c</code>'s <code>SysTick_Handler</code> replaces it. Every handler you don't write lands in an endless loop, which is why an unexpected interrupt or a HardFault looks like a hang.</p>
+<pre class="asm"><span class="c">/* startup_stm32f103xx.S */</span>
+  .weak      SysTick_Handler
+  .thumb_set SysTick_Handler, Default_Handler
+
+Default_Handler:
+Infinite_Loop:
+  b Infinite_Loop                 <span class="c">@ 0x0800 02E8: branch to itself, forever</span></pre>
+      <p class="aside">ST's file lists every interrupt of the STM32F103 family up to TIM7 (IRQ 59), including peripherals the C8 doesn't have (TIM8, FSMC, SDIO). Unused entries cost 4 bytes each and do no harm.</p>
+    </div>
+  </article>
+
+  <!-- 4 -->
+  <article class="stage">
+    <div class="stage-num">4</div>
+    <div class="stage-body">
+      <h3><code>Reset_Handler</code>: 25 instructions that prepare C</h3>
+      <p>C code assumes three things the hardware does not give it: a working stack, initialised globals and zeroed statics. <code>Reset_Handler</code> provides them. This is the real disassembly (<code>arm-none-eabi-objdump -d</code>), with each PC-relative load written as the value it loads; the comments are added.</p>
+<pre class="asm"><span class="a">08000298</span> &lt;Reset_Handler&gt;:
+<span class="a">08000298</span>  ldr   r0, =0x20005000     <span class="c">@ _estack</span>
+<span class="a">0800029a</span>  mov   sp, r0              <span class="c">@ stack = top of RAM (again: also right after a jump from a bootloader)</span>
+<span class="a">0800029c</span>  bl    SystemInit          <span class="c">@ stage 5: clock to 48 MHz</span>
+
+<span class="a">080002a0</span>  ldr   r0, =0x20000000     <span class="c">@ _sdata : where .data lives in RAM</span>
+<span class="a">080002a2</span>  ldr   r1, =0x20000004     <span class="c">@ _edata : end of .data</span>
+<span class="a">080002a4</span>  ldr   r2, =0x0800041c     <span class="c">@ _sidata: its initial values in flash</span>
+<span class="a">080002a6</span>  movs  r3, #0              <span class="c">@ byte offset</span>
+<span class="a">080002a8</span>  b.n   LoopCopyDataInit
+CopyDataInit:
+<span class="a">080002aa</span>  ldr   r4, [r2, r3]        <span class="c">@ read a word from flash</span>
+<span class="a">080002ac</span>  str   r4, [r0, r3]        <span class="c">@ write it to RAM</span>
+<span class="a">080002ae</span>  adds  r3, #4
+LoopCopyDataInit:
+<span class="a">080002b0</span>  adds  r4, r0, r3
+<span class="a">080002b2</span>  cmp   r4, r1
+<span class="a">080002b4</span>  bcc.n CopyDataInit        <span class="c">@ 1 word today</span>
+
+<span class="a">080002b6</span>  ldr   r2, =0x20000004     <span class="c">@ _sbss</span>
+<span class="a">080002b8</span>  ldr   r4, =0x200001bc     <span class="c">@ _ebss</span>
+<span class="a">080002ba</span>  movs  r3, #0
+<span class="a">080002bc</span>  b.n   LoopFillZerobss
+FillZerobss:
+<span class="a">080002be</span>  str   r3, [r2, #0]        <span class="c">@ write 0</span>
+<span class="a">080002c0</span>  adds  r2, #4
+LoopFillZerobss:
+<span class="a">080002c2</span>  cmp   r2, r4
+<span class="a">080002c4</span>  bcc.n FillZerobss         <span class="c">@ 110 words today</span>
+
+<span class="a">080002c6</span>  bl    __libc_init_array   <span class="c">@ stage 7</span>
+<span class="a">080002ca</span>  bl    main                <span class="c">@ stage 8</span>
+LoopForever:
+<span class="a">080002ce</span>  b.n   LoopForever         <span class="c">@ only reached if main() returns</span>
+
+<span class="a">080002d0</span>  .word 0x20005000          <span class="c">@ literal pool: the constants the</span>
+<span class="a">080002d4</span>  .word 0x20000000          <span class="c">@ "ldr rX, =value" lines above read.</span>
+<span class="a">080002d8</span>  .word 0x20000004          <span class="c">@ A Thumb instruction is 2 bytes, too</span>
+<span class="a">080002dc</span>  .word 0x0800041c          <span class="c">@ small to hold a 32-bit address, so</span>
+<span class="a">080002e0</span>  .word 0x20000004          <span class="c">@ each one is stored here and loaded</span>
+<span class="a">080002e4</span>  .word 0x200001bc          <span class="c">@ PC-relative.</span></pre>
+      <p>Note the order: <code>SystemInit</code> runs <em>before</em> the copy and zero loops. It speeds up everything after it, but it also means it cannot use global variables (next stage).</p>
+    </div>
+  </article>
+
+  <!-- 5 -->
+  <article class="stage">
+    <div class="stage-num">5</div>
+    <div class="stage-body">
+      <h3><code>SystemInit()</code> takes the clock from 8 to 48 MHz</h3>
+      <p>Written in C in <code>Src/clock.c</code> and called from assembly. Each step is one or two register accesses:</p>
+      <div class="tbl-wrap">
+        <table class="compact steps">
+          <thead><tr><th></th><th>What</th><th>Register write</th><th>Why</th></tr></thead>
+          <tbody>
+            <tr><td class="n">a</td><td>Point VTOR at the vector table</td><td><code>SCB_VTOR = 0x0800 0000</code></td><td>Exceptions read the table at its real flash address instead of through the boot alias.</td></tr>
+            <tr><td class="n">b</td><td>1 flash wait state + prefetch</td><td><code>FLASH_ACR = 0x0000 0011</code></td><td>Flash can't answer in one cycle above 24 MHz. This must be set <em>before</em> the clock goes up, or the CPU reads wrong instructions.</td></tr>
+            <tr><td class="n">c</td><td>Start the 8 MHz crystal</td><td><code>RCC_CR |= HSEON</code> (bit 16)<br>wait for <code>HSERDY</code> (bit 17)</td><td>The crystal needs about 2 ms to oscillate steadily. The wait gives up after 200,000 loop passes (50–100 ms at 8 MHz).</td></tr>
+            <tr><td class="n">d</td><td>Configure PLL and bus dividers</td><td><code>RCC_CFGR = 0x0011 0400</code></td><td>PLLSRC = HSE (bit 16), PLLMUL = ×6 (bits 21:18 = 0100), APB1 ÷ 2 (bits 10:8 = 100, max 36 MHz), AHB and APB2 ÷ 1. SW is still HSI, so the clock doesn't change yet.</td></tr>
+            <tr><td class="n">e</td><td>Start the PLL</td><td><code>RCC_CR |= PLLON</code> (bit 24)<br>wait for <code>PLLRDY</code> (bit 25)</td><td>The PLL locks onto 8 MHz × 6 = 48 MHz.</td></tr>
+            <tr><td class="n">f</td><td>Switch SYSCLK to the PLL</td><td><code>RCC_CFGR |= SW_PLL</code><br>wait until SWS reads PLL</td><td>Register now reads <code>0x0011 040A</code>. From the next instruction the core runs 6× faster.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="cols2">
+        <div class="panel"><h3>If the crystal never starts</h3><p>Step c times out, HSEON is cleared and the PLL takes the internal oscillator instead: HSI ÷ 2 × 12 = 48 MHz. Same frequency, so SPI speed and the 1 ms tick are unchanged, only less accurate (the internal oscillator is about ±1 %). <code>clock_uses_crystal()</code> tells you which one you got.</p></div>
+        <div class="panel"><h3>Why it uses no global variables</h3><p>It runs before stage 6, so any global would read random RAM, and anything it wrote would be overwritten by the copy and zero loops a moment later. It only uses registers and its own stack. If the PLL fails to lock it returns early and the chip stays on 8 MHz, making every timing 6× slow.</p></div>
+      </div>
+    </div>
+  </article>
+
+  <!-- 6 -->
+  <article class="stage">
+    <div class="stage-num">6</div>
+    <div class="stage-body">
+      <h3>Globals get their starting values: <code>.data</code> and <code>.bss</code></h3>
+      <p>The compiler sorts every global and <code>static</code> variable into a section, and the linker script decides where each section goes. Variables with a starting value need two places: their value is stored in flash (it survives power-off), and the variable itself lives in RAM (it can change). The copy loop moves the values across. Variables without a starting value must be 0 by the C standard, so the second loop simply clears them.</p>
+      <div class="cols2">
+        <div class="panel">
+          <span class="eyebrow">In C</span>
+<pre class="asm"><span class="k">static uint32_t</span> count = 5;      <span class="c">// .data   : 5 in flash, copied to RAM</span>
+<span class="k">static uint32_t</span> s_ticks_ms;     <span class="c">// .bss    : cleared to 0</span>
+<span class="k">static const uint16_t</span> lut[] =   <span class="c">// .rodata : stays in flash, no copy,</span>
+    { 0x0000, 0xFFFF };           <span class="c">//           no RAM used</span>
+<span class="k">void</span> f(<span class="k">void</span>) { <span class="k">int</span> x; }        <span class="c">// stack   : not touched at start-up</span></pre>
+        </div>
+        <div class="panel">
+          <span class="eyebrow">In stm32f103x8_flash.ld (simplified)</span>
+<pre class="asm">_sidata = LOADADDR(.data);
+.data : { _sdata = .; *(.data*) ; _edata = .; }
+        &gt;RAM AT&gt; FLASH   <span class="c">/* lives in RAM, stored in flash */</span>
+.bss  : { _sbss = .;  *(.bss*) *(COMMON); _ebss = .; }
+        &gt;RAM             <span class="c">/* RAM only, NOLOAD */</span></pre>
+        </div>
+      </div>
+      <div class="tbl-wrap">
+        <table class="compact">
+          <thead><tr><th>Linker symbol</th><th>Address</th><th>Meaning in this build</th></tr></thead>
+          <tbody>
+            <tr><td><code>_sidata</code></td><td class="v">0x0800 041C</td><td>Initial values of <code>.data</code>, stored right after the code in flash.</td></tr>
+            <tr><td><code>_sdata</code> … <code>_edata</code></td><td class="v">0x2000 0000 … 0x2000 0004</td><td>4 bytes: one C-library variable (<code>__atexit_recursive_mutex</code>). None of yours yet.</td></tr>
+            <tr><td><code>_sbss</code> … <code>_ebss</code></td><td class="v">0x2000 0004 … 0x2000 01BC</td><td>440 bytes zeroed. Yours: <code>s_ticks_ms</code> (4 B, <code>timebase.c</code>). The rest is C-library state, mostly the 400-byte <code>atexit</code> table.</td></tr>
+            <tr><td><code>_end</code></td><td class="v">0x2000 01C0</td><td>Start of the heap (<code>malloc</code>, via <code>_sbrk</code> in <code>sysmem.c</code>). Unused in this project.</td></tr>
+            <tr><td><code>_estack</code></td><td class="v">0x2000 5000</td><td>Top of the stack. The linker fails the build if 512 B of heap + 1 KB of stack (<code>_Min_Heap_Size</code>, <code>_Min_Stack_Size</code>) don't fit after <code>.bss</code>.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </article>
+
+  <!-- 7 -->
+  <article class="stage">
+    <div class="stage-num">7</div>
+    <div class="stage-body">
+      <h3>The C library initialises itself: <code>__libc_init_array</code></h3>
+      <p>A newlib function at <code>0x0800 0170</code>. It calls every function listed in the <code>.preinit_array</code> and <code>.init_array</code> sections, plus an empty <code>_init</code>. In C++ this is where global constructors run; in this C project it calls two library helpers and nothing of yours:</p>
+      <div class="tbl-wrap">
+        <table class="compact">
+          <thead><tr><th>.init_array entry</th><th>Function</th><th>What it does</th></tr></thead>
+          <tbody>
+            <tr><td class="v">0x0800 01C9</td><td><code>register_fini</code></td><td>Registers the library's clean-up code with <code>atexit</code>. That registration is why the 400-byte <code>atexit</code> table sits in <code>.bss</code>.</td></tr>
+            <tr><td class="v">0x0800 0155</td><td><code>frame_dummy</code></td><td>Registers exception-unwinding tables if there are any. Here there are none, so it returns.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="aside">A C function marked <code>__attribute__((constructor))</code> would be added to this list and run here, before <code>main()</code>.</p>
+    </div>
+  </article>
+
+  <!-- 8 -->
+  <article class="stage last">
+    <div class="stage-num">8</div>
+    <div class="stage-body">
+      <h3><code>main()</code> is called, and must never return</h3>
+      <p><code>bl main</code> at <code>0x0800 02CA</code> jumps to <code>0x0800 0290</code>. An embedded program has nowhere to return to: if <code>main()</code> ever returned, <code>Reset_Handler</code> would fall into <code>LoopForever</code> and the clean-up functions in <code>.fini_array</code> would never run. That is why <code>main.c</code> ends in <code>for (;;)</code>.</p>
+      <div class="cols2">
+        <div class="panel ready">
+          <h3>Already done when <code>main()</code> starts</h3>
+          <ul class="ticks">
+            <li>Core at 48 MHz, APB1 24 MHz, APB2 48 MHz</li>
+            <li>Flash at 1 wait state with prefetch</li>
+            <li>VTOR at <code>0x0800 0000</code></li>
+            <li>Stack pointer at <code>0x2000 5000</code></li>
+            <li>Every global holds its starting value or 0</li>
+          </ul>
+        </div>
+        <div class="panel todo">
+          <h3>Still your job</h3>
+          <ul class="ticks">
+            <li><strong>SysTick is off.</strong> Call <code>timebase_init()</code> first, or <code>millis()</code> stays 0 and <code>delay_ms()</code> waits forever.</li>
+            <li>Every peripheral clock is off: enable GPIOA, GPIOB, SPI1, TIM3 in RCC before touching them.</li>
+            <li>The LCD pins are floating inputs until configured.</li>
+            <li>No interrupt is enabled in the NVIC.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </article>
+
+  <div class="panel watch">
+    <span class="eyebrow">Watch it on your board</span>
+    <h3>Stop at each stage with OpenOCD</h3>
+    <p>Type these in <code>openocd.py</code>'s Console tab, or in <code>telnet localhost 4444</code>. <code>bp ADDR 2 hw</code> sets a hardware breakpoint; the core stops when it reaches that address.</p>
+<pre class="asm">reset halt               <span class="c"># stop before the first instruction</span>
+reg pc                   <span class="c"># 0x08000298  Reset_Handler</span>
+reg sp                   <span class="c"># 0x20005000  loaded from the vector table</span>
+mdw 0x40021004           <span class="c"># RCC_CFGR = 0x00000000 : still on HSI, 8 MHz</span>
+
+bp 0x080002a0 2 hw       <span class="c"># the instruction after "bl SystemInit"</span>
+resume
+mdw 0x40021004           <span class="c"># 0x0011040a : PLL, 48 MHz</span>
+mdw 0x40022000           <span class="c"># FLASH_ACR  = 0x00000011 : 1 wait state</span>
+rbp 0x080002a0
+
+bp 0x08000290 2 hw       <span class="c"># main</span>
+resume                   <span class="c"># stops at the first instruction of main()</span>
+mdw 0x20000004 4         <span class="c"># start of .bss: all zero now</span>
+rbp 0x08000290
+resume</pre>
+  </div>
+</section>
+
+<section aria-labelledby="h-mem">
+  <div class="sec-head">
+    <span class="eyebrow">Memory map</span>
+    <h2 id="h-mem">Where the image lives in the chip</h2>
+    <p>Bars are to scale. The numbers come from <code>arm-none-eabi-size</code> on the Debug build.</p>
+  </div>
+  <div class="mem">
+    <div class="membar">
+      <div class="top"><h3>Flash · 64 KB at 0x0800 0000</h3><span>1,056 B used · 64,480 B free</span></div>
+      <div class="bar" role="img" aria-label="Flash: 1,056 of 65,536 bytes used">
+        <div class="seg-vec" style="width:0.464%"></div><div class="seg-text" style="width:1.123%"></div><div class="seg-misc" style="width:0.024%"></div><div class="gap"></div>
+      </div>
+      <div class="axis"><span>0x0800 0000</span><span>0x0800 8000</span><span>0x0801 0000</span></div>
+      <div class="zoom">
+        <span class="eyebrow">First 1,056 bytes, enlarged</span>
+        <div class="bar" role="img" aria-label="Vector table 304 bytes, code 736 bytes, init arrays and data initialisers 16 bytes">
+          <div class="seg-vec" style="width:28.79%"></div><div class="seg-text" style="width:69.70%"></div><div class="seg-misc" style="width:1.51%"></div>
+        </div>
+        <div class="keys">
+          <span><i class="seg-vec"></i>.isr_vector 304 B (76 × 4-byte addresses)</span>
+          <span><i class="seg-text"></i>.text 736 B (code)</span>
+          <span><i class="seg-misc"></i>init/fini arrays + .data initialisers 16 B</span>
+        </div>
+      </div>
+    </div>
+    <div class="membar">
+      <div class="top"><h3>RAM · 20 KB at 0x2000 0000</h3><span>1,984 B reserved · 18,496 B free</span></div>
+      <div class="bar" role="img" aria-label="RAM: data and bss 444 bytes at the start, 512 byte heap after them, 1 KB stack at the top">
+        <div class="seg-data" style="width:2.17%"></div><div class="seg-heap" style="width:2.5%"></div><div class="gap"></div><div class="seg-stack" style="width:5%"></div>
+      </div>
+      <div class="axis"><span>0x2000 0000</span><span>0x2000 2800</span><span>0x2000 5000</span></div>
+      <div class="keys">
+        <span><i class="seg-data"></i>.data + .bss 444 B</span>
+        <span><i class="seg-heap"></i>heap 512 B (minimum reserved)</span>
+        <span><i class="seg-stack"></i>stack 1 KB, grows down from 0x2000 5000</span>
+      </div>
+    </div>
+    <p class="note">A full-screen line buffer would be 240 × 2 = 480 bytes; a full frame (240 × 320 × 2 = 153,600 bytes) does not fit in 20 KB of RAM. That is why the drivers stream pixels straight to the panel's own memory instead of keeping a frame buffer.</p>
+  </div>
+</section>
+
+<section aria-labelledby="h-clk">
+  <div class="sec-head">
+    <span class="eyebrow">Clock tree</span>
+    <h2 id="h-clk">One crystal, every timing</h2>
+    <p>All timings derive from the <code>*_HZ</code> constants in <code>board.h</code>. Change them together with <code>clock.c</code>, or the SPI speed, PWM frequency and 1 ms tick all drift.</p>
+  </div>
+  <div class="clk">
+    <ul>
+      <li><span class="node"><b>HSE crystal</b><span class="hz">8 MHz</span><small>on the Blue Pill board</small></span>
+        <ul><li><span class="node"><span class="op">PLL × 6</span><b>SYSCLK</b><span class="hz">48 MHz</span></span>
+          <ul>
+            <li><span class="node"><span class="op">AHB ÷ 1</span><b>HCLK</b><span class="hz">48 MHz</span><small>core, flash (1 wait state)</small></span>
+              <ul><li><span class="node"><span class="op">÷ 48,000</span><b>SysTick</b><span class="hz">1 kHz</span><small><code>millis()</code>, <code>delay_ms()</code></small></span></li></ul>
+            </li>
+            <li><span class="node"><span class="op">APB2 ÷ 1</span><b>PCLK2</b><span class="hz">48 MHz</span><small>GPIOA/B/C, AFIO</small></span>
+              <ul><li><span class="node"><span class="op">BR ÷ 4</span><b>SPI1 SCK</b><span class="hz">12 MHz</span><small>about 0.1 s for a full screen</small></span></li></ul>
+            </li>
+            <li><span class="node"><span class="op">APB1 ÷ 2</span><b>PCLK1</b><span class="hz">24 MHz</span><small>36 MHz is the limit</small></span>
+              <ul><li><span class="node"><span class="op">× 2 for timers</span><b>TIM3</b><span class="hz">48 MHz</span></span>
+                <ul><li><span class="node"><span class="op">ARR + 1 = 2,400</span><b>Backlight PWM</b><span class="hz">20 kHz</span><small>CH3 on PB0, duty = CCR3 / 2,400</small></span></li></ul>
+              </li></ul>
+            </li>
+          </ul>
+        </li></ul>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section aria-labelledby="h-wire">
+  <div class="sec-head">
+    <span class="eyebrow">Wiring</span>
+    <h2 id="h-wire">TFT pins to Blue Pill pins</h2>
+    <p>Defined once in <code>board.h</code>. SPI1 uses its default pins (no remap in <code>AFIO_MAPR</code>).</p>
+  </div>
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr><th>TFT</th><th>Blue Pill</th><th>Driven by</th><th>Pin mode</th><th>In code</th></tr></thead>
+      <tbody>
+        <tr><td>SCK</td><td class="pin">PA5</td><td>SPI1_SCK</td><td>AF push-pull 50 MHz</td><td><code>LCD_SCK_PIN</code></td></tr>
+        <tr><td>SDI (MOSI)</td><td class="pin">PA7</td><td>SPI1_MOSI</td><td>AF push-pull 50 MHz</td><td><code>LCD_MOSI_PIN</code></td></tr>
+        <tr><td>SDO (MISO)</td><td class="pin">PA6</td><td>SPI1_MISO, panel ID only</td><td>input, pull-down</td><td><code>LCD_MISO_PIN</code></td></tr>
+        <tr><td>CS</td><td class="pin">PA4</td><td>GPIO, active low</td><td>output 50 MHz</td><td><code>LCD_CS_PIN</code></td></tr>
+        <tr><td>DC</td><td class="pin">PA3</td><td>GPIO: low = command, high = data</td><td>output 50 MHz</td><td><code>LCD_DC_PIN</code></td></tr>
+        <tr><td>RESET</td><td class="pin">PA2</td><td>GPIO, active low</td><td>output 2 MHz</td><td><code>LCD_RST_PIN</code></td></tr>
+        <tr><td>LED</td><td class="pin">PB0</td><td>TIM3_CH3 PWM, 20 kHz</td><td>AF push-pull 2 MHz</td><td><code>LCD_BL_PIN</code></td></tr>
+        <tr><td>VCC · GND</td><td class="pin">3.3 V · GND</td><td>Power</td><td></td><td></td></tr>
+        <tr><td>(on board)</td><td class="pin">PC13</td><td>LED, active low</td><td>output 2 MHz</td><td><code>LED_PIN</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section aria-labelledby="h-build">
+  <div class="sec-head">
+    <span class="eyebrow">Build and flash</span>
+    <h2 id="h-build">From source to the chip</h2>
+    <p><code>./flash.sh</code> does all four steps. OpenOCD can do the last one instead, from <code>openocd.py</code> or a terminal.</p>
+  </div>
+  <div class="pipe">
+    <div><span class="eyebrow">Configure</span><h3>CMake</h3><p>Reads <code>CMakeLists.txt</code> and <code>cmake/*.cmake</code>, writes a Ninja build.</p><pre>cmake --preset Debug</pre></div>
+    <div><span class="eyebrow">Compile + link</span><h3>arm-none-eabi-gcc</h3><p>C11, <code>-Wall -Wextra -Wpedantic</code>, Cortex-M3 Thumb. The linker script places sections; unused functions are dropped.</p><pre>cmake --build --preset Debug</pre></div>
+    <div><span class="eyebrow">Output</span><h3>lcd.elf → lcd.bin</h3><p>The ELF keeps symbols and line numbers for debugging; the BIN is the raw bytes for flash.</p><pre>arm-none-eabi-objcopy -O binary</pre></div>
+    <div><span class="eyebrow">Program</span><h3>ST-Link over SWD</h3><p>Writes flash from 0x0800 0000 and resets the chip. Only one program can use the ST-Link at a time.</p><pre>st-flash --reset write lcd.bin 0x08000000</pre></div>
+  </div>
+</section>
+
+<section aria-labelledby="h-start">
+  <div class="sec-head">
+    <span class="eyebrow">Where to start</span>
+    <h2 id="h-start">Reading order and your first steps</h2>
+  </div>
+  <div class="cols2">
+    <div class="panel">
+      <h3>Suggested reading order</h3>
+      <ol>
+        <li><code>board.h</code>: pins and clocks, the vocabulary of everything else.</li>
+        <li><code>spi.c</code>: how one byte leaves the chip (TXE, BSY, DFF).</li>
+        <li><code>st7789.c</code>: the init sequence and the window / pixel model.</li>
+        <li><code>gfx.c</code>: how text becomes pixels.</li>
+        <li><code>clock.c</code> and <code>startup_stm32f103xx.S</code>: what happened before <code>main()</code>.</li>
+      </ol>
+      <p>Keep RM0008 (STM32F1 reference manual) and the ST7789V datasheet open; the comments cite their section names.</p>
+    </div>
+    <div class="panel">
+      <h3>Rules the code follows</h3>
+      <ol>
+        <li>Every register access goes through a name in <code>stm32f103_regs.h</code>.</li>
+        <li>Every wait loop has a timeout; functions return 0 on success, -1 on error.</li>
+        <li>A peripheral needs its clock enabled in RCC before its registers respond.</li>
+        <li>The build must stay free of warnings.</li>
+        <li>New source files go into <code>CMakeLists.txt</code>, never into the managed <code>cmake/</code> files.</li>
+      </ol>
+      <p>When the screen stays blank, <code>openocd.py</code> shows each LCD register decoded while the program runs.</p>
+    </div>
+  </div>
+</section>
+
+<footer>lcd_01_hello_world · numbers from the Debug build of the current tree (main.c empty).</footer>
+</div>
+
+<script>
+(function () {
+  var tree = document.getElementById("tree");
+  var chips = document.querySelectorAll(".chip[data-role]");
+  function apply() {
+    var on = [];
+    chips.forEach(function (c) { if (c.getAttribute("aria-pressed") === "true") on.push(c.dataset.role); });
+    tree.classList.toggle("filtering", on.length > 0);
+    tree.querySelectorAll("li[data-role]").forEach(function (li) {
+      li.classList.toggle("on", on.indexOf(li.dataset.role) !== -1);
+    });
+  }
+  chips.forEach(function (c) {
+    c.addEventListener("click", function () {
+      c.setAttribute("aria-pressed", c.getAttribute("aria-pressed") === "true" ? "false" : "true");
+      apply();
+    });
+  });
+})();
+</script>
+
+</body>
+</html>

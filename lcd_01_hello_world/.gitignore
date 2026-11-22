@@ -1,0 +1,19 @@
+# Build output (CMake presets write to build/<preset>)
+build/
+*.elf
+*.bin
+*.hex
+*.map
+*.su
+
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+
+# Python
+__pycache__/
+
+# Claude Code per-user settings
+.claude/settings.local.json
