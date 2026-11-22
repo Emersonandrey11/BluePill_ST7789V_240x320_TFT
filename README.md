@@ -12,6 +12,7 @@
 
 <p align="center">
   <a href="#-getting-started"><b>Getting started</b></a> ·
+  <a href="docs/windows-setup.md"><b>Windows guide</b></a> ·
   <a href="#-wiring"><b>Wiring</b></a> ·
   <a href="#-how-the-code-is-organised"><b>Architecture</b></a> ·
   <a href="#-status"><b>Status</b></a> ·
@@ -75,6 +76,9 @@ ST-Link V2: **SWDIO → PA13**, **SWCLK → PA14**, GND, and 3.3 V only if the b
 > Clone the repo and open `lcd_01_hello_world/docs/project-structure.html` in a browser for an interactive version: hover any wire to see the register value that configures it.
 
 ## 🚀 Getting started
+
+> [!NOTE]
+> **On Windows?** Follow the step-by-step guide **[docs/windows-setup.md](docs/windows-setup.md)**: driver, tools, build and three ways to flash, including connect under reset. The commands below are for Linux.
 
 **You need:** the board, the TFT module and an ST-Link V2; the STM32Cube extension for VS Code (it installs the GNU Arm toolchain, CMake and Ninja); `st-flash` or OpenOCD (`sudo apt install stlink-tools openocd`); and Python 3 with tkinter for `openocd.py`.
 
