@@ -21,6 +21,15 @@
 
 ---
 
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/wiring-dark.png">
+    <img src="docs/wiring-light.png" alt="Wiring diagram: the STM32F103C8T6 LQFP48 package with SPI1, GPIOA, TIM3, GPIOC, RCC and the debug port drawn inside it, wired pin by pin to the ST7789V TFT module and the ST-Link V2" width="100%">
+  </picture>
+  <br>
+  <sub>Every package pin of the STM32F103C8T6 and the peripheral behind it. An interactive version, where hovering a wire shows its register settings, is in <code>lcd_01_hello_world/docs/project-structure.html</code>.</sub>
+</p>
+
 Learning to drive a 2.8" **ST7789V 240×320 TFT** from an **STM32F103C8T6 "Blue Pill"** the hard way: no HAL, no CMSIS, no CubeMX-generated code. Every register is written by name, every wait loop has a timeout, and the comments explain why, citing the reference manual.
 
 The first project, [`lcd_01_hello_world/`](lcd_01_hello_world/), contains the whole foundation: start-up code, a 48 MHz clock, a 1 ms SysTick, an SPI1 driver, an ST7789V panel driver and a small graphics layer with bitmap fonts. **`main.c` is empty on purpose:** writing the first application is the exercise.
