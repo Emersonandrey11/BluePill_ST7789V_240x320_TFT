@@ -320,7 +320,8 @@ class OpenOCD:
 class Symbols:
     def __init__(self):
         self.path = None
-        self.funcs = []       # sorted [(addr, size, name)]
+        self.funcs = []       # sorted [(addr, size, name)], sized functions only
+        self.exact = {}
         self.data = []        # [(name, addr, size, type)]
         self._keys = []
 
@@ -331,7 +332,7 @@ class Symbols:
         if not os.path.isfile(path):
             raise OpenOCDError(f"{path} not found: build the project first (Flash tab -> Build).")
         out = subprocess.run([nm, "-S", "-C", "--defined-only", path], capture_output=True, text=True, check=True).stdout
-        funcs, data = [], []
+        best, data = {}, []        # address -> (rank, size, name); a strong symbol beats its weak aliases
         for line in out.splitlines():
             parts = line.split(None, 3)
             if len(parts) == 4:
@@ -341,10 +342,13 @@ class Symbols:
             else:
                 continue
             if typ in "TtWw":
-                funcs.append((addr & ~1, size, name))
+                key, rank = addr & ~1, (0 if typ in "Tt" else 1, 0 if size else 1)
+                if key not in best or rank < best[key][0]:
+                    best[key] = (rank, size, name)
             elif typ in "BbDdRrGgSsVv" and not name.startswith("$"):
                 data.append((name, addr, size, typ))
-        funcs.sort()
+        funcs = sorted((a, v[1], v[2]) for a, v in best.items() if v[1])
+        self.exact = {a: v[2] for a, v in best.items() if not v[1]}   # labels like _etext: exact match only
         data.sort(key=lambda d: d[1])
         self.path, self.funcs, self.data = path, funcs, data
         self._keys = [f[0] for f in funcs]
@@ -355,13 +359,12 @@ class Symbols:
             return ""
         a = addr & ~1
         i = bisect.bisect_right(self._keys, a) - 1
-        if i < 0:
-            return ""
-        start, size, name = self.funcs[i]
-        if size and a >= start + size:
-            return ""
-        off = a - start
-        return f"{name}+0x{off:X}" if off else name
+        if i >= 0:
+            start, size, name = self.funcs[i]
+            if a < start + size:
+                off = a - start
+                return f"{name}+0x{off:X}" if off else name
+        return self.exact.get(a, "")
 
 
 # =============================================================================
@@ -561,6 +564,8 @@ def tim3_summary(v):
     psc, arr, ccr3, cr1, ccer = (v.get(k) for k in ("PSC", "ARR", "CCR3", "CR1", "CCER"))
     if not all(isinstance(x, int) for x in (psc, arr, ccr3, cr1, ccer)):
         return []
+    if arr == 0:
+        return [("Status", "not configured yet (ARR = 0, counter " + ("running" if bits(cr1, 0) else "stopped") + ")")]
     cnt_hz = STATE["tim_apb1"] / (psc + 1)
     period = arr + 1
     duty = min(ccr3 / period, 1.0) * 100 if period else 0
@@ -573,8 +578,10 @@ def systick_summary(v):
     csr, rvr = v.get("CSR"), v.get("RVR")
     if not isinstance(csr, int) or not isinstance(rvr, int):
         return []
+    if not bits(csr, 0):
+        return [("Running", "no: timebase_init() starts it (reload " + str(rvr) + ")")]
     clk = STATE["hclk"] if bits(csr, 2) else STATE["hclk"] / 8
-    return [("Running", "YES" if bits(csr, 0) else "no"),
+    return [("Running", "YES"),
             ("Tick period", f"{(rvr + 1) / clk * 1e3:.4g} ms ({rvr + 1} cycles of {mhz(clk)})"),
             ("Interrupt", "SysTick_Handler on every wrap" if bits(csr, 1) else "off")]
 
@@ -593,7 +600,7 @@ def scb_summary(v):
     if isinstance(v.get("CPUID"), int):
         rows.append(("Core", decode_cpuid(v["CPUID"])))
     if isinstance(v.get("ICSR"), int):
-        rows.append(("Executing", exception_name(bits(v["ICSR"], 0, 9))))
+        rows.append(("ICSR.VECTACTIVE", exception_name(bits(v["ICSR"], 0, 9)) + "  (when halted, the Chip and Core tabs use xPSR instead)"))
     cfsr, hfsr = v.get("CFSR"), v.get("HFSR")
     if isinstance(cfsr, int) and isinstance(hfsr, int):
         names = [n for b, n, _ in CFSR_BITS if bits(cfsr, b)] + [n for b, n, _ in HFSR_BITS if bits(hfsr, b)]
@@ -783,7 +790,7 @@ def collect_chip(ocd, labels, syms):
     version = safe(lambda: ocd.cmd("version").strip(), "?")
     target = safe(lambda: ocd.cmd("target current").strip(), "?")
     state = safe(ocd.state, "?")
-    speed = safe(lambda: ocd.cmd("adapter speed").strip(), "?")
+    speed = safe(lambda: re.sub(r"^adapter speed:\s*", "", ocd.cmd("adapter speed").strip()), "?")
     S.append(("Connection", [("OpenOCD", version, ""), ("Target", target, ""),
                              ("Adapter speed", speed, "SWD clock; lower it if reads fail on long wires"),
                              ("CPU state", state, "halted = stopped by the debugger")]))
@@ -820,8 +827,13 @@ def collect_chip(ocd, labels, syms):
     if dhcsr is not None:
         flags = [n for b, n in ((17, "halted"), (18, "sleeping (WFI)"), (19, "LOCKUP"), (25, "was reset")) if bits(dhcsr, b)]
         rows.append(("Debug status", ", ".join(flags) or "running", f"DHCSR {hex32(dhcsr)}"))
-    if icsr is not None:
-        rows.append(("Executing", exception_name(bits(icsr, 0, 9)), "ICSR.VECTACTIVE"))
+    exc, src = (bits(icsr, 0, 9), "ICSR.VECTACTIVE") if icsr is not None else (None, "")
+    if state == "halted":
+        xpsr = safe(lambda: ocd.reg("xPSR"))
+        if xpsr is not None:
+            exc, src = bits(xpsr, 0, 9), "xPSR bits 8:0 (core halted)"
+    if exc is not None:
+        rows.append(("Executing", exception_name(exc), src))
     if state == "halted":
         pc = safe(lambda: ocd.reg("pc"))
         sp = safe(lambda: ocd.reg("sp"))
@@ -955,7 +967,12 @@ def analyse_fault(ocd, syms):
     cfsr, hfsr = ocd.read32(0xE000ED28), ocd.read32(0xE000ED2C)
     mmfar, bfar = ocd.read32(0xE000ED34), ocd.read32(0xE000ED38)
     icsr = ocd.read32(0xE000ED04)
-    lines.append(f"Executing now : {exception_name(bits(icsr, 0, 9))}   (ICSR {hex32(icsr)})")
+    state = ocd.state()
+    if state == "halted":
+        xpsr = ocd.reg("xPSR")
+        lines.append(f"Executing now : {exception_name(bits(xpsr, 0, 9))}   (xPSR {hex32(xpsr)})")
+    else:
+        lines.append(f"Executing now : {exception_name(bits(icsr, 0, 9))}   (ICSR {hex32(icsr)})")
     lines.append(f"CFSR {hex32(cfsr)}   HFSR {hex32(hfsr)}")
     found = False
     for b, n, t in HFSR_BITS:
@@ -972,7 +989,6 @@ def analyse_fault(ocd, syms):
         lines.append(f"  BFAR  = {hex32(bfar)}  <- the address that was accessed")
     if not found:
         lines.append("  No fault bits set: the program has not faulted since the last reset.")
-    state = ocd.state()
     if state != "halted":
         lines.append("\nHalt the core to see where it is and to unwind the exception stack frame.")
         return "\n".join(lines)
@@ -989,8 +1005,14 @@ def analyse_fault(ocd, syms):
         for n, v in zip(names, frame):
             sym = syms.lookup(v) if n in ("lr", "pc") else ""
             lines.append(f"  {n:<5} {hex32(v)} {sym}")
-        lines.append(f"\n=> The interrupted code was at {hex32(frame[6])} {syms.lookup(frame[6])}.")
-        lines.append("   Look it up:  arm-none-eabi-addr2line -e build/Debug/lcd.elf " + hex32(frame[6]))
+        lines.append(f"\n=> The interrupted code was at {(hex32(frame[6]) + ' ' + syms.lookup(frame[6])).strip()}.")
+        if 0x20000000 <= frame[6] < 0x20005000:
+            lines.append("   That address is in SRAM, but this firmware runs only from flash. Code in SRAM is\n"
+                         "   usually OpenOCD's own helper (flash loader or CRC verify; r0 = 0x04C11DB7 is the\n"
+                         "   CRC-32 polynomial), so the fault came from a debugger operation, not from your\n"
+                         "   program. 'reset run' (Core tab) starts the firmware cleanly.")
+        else:
+            lines.append("   Look it up:  arm-none-eabi-addr2line -e build/Debug/lcd.elf " + hex32(frame[6]))
     return "\n".join(lines)
 
 
